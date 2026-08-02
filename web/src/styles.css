@@ -401,7 +401,11 @@ body {
   margin-left: 8px;
   font-size: 11px;
   color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.15s;
 }
+
+.th-cmd:hover .copy-hint { opacity: 1; }
 
 .th-stats {
   display: flex;
@@ -555,12 +559,6 @@ body {
 }
 
 .autoscroll input { accent-color: var(--accent); }
-
-.term-hint {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--accent);
-}
 
 .term-body {
   flex: 1;

@@ -27,7 +27,6 @@ export default function TaskView({ taskId }: { taskId: string }) {
   const [termSize, setTermSize] = useState('');
 
   const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
   const gapsRef = useRef<number[]>([]);
   const outputCountRef = useRef(0);
   const lastSeqRef = useRef(0);
@@ -96,16 +95,15 @@ export default function TaskView({ taskId }: { taskId: string }) {
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: 'Consolas, "Cascadia Mono", monospace',
-      theme: { background: '#0d1117', foreground: '#e6edf3', cursor: '#58a6ff' },
+      fontFamily: '"JetBrains Mono", "Cascadia Code", Consolas, monospace',
+      theme: { background: '#0b0f14', foreground: '#e8eaed', cursor: '#4ade80' },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
     termRef.current = term;
-    fitRef.current = fit;
     term.open(document.getElementById('term-host')!);
     fit.fit();
-    setTermSize(`${fit.cols}×${fit.rows}`);
+    setTermSize(fitSize(fit));
     // 键盘输入 → 转发给正在运行的进程（PTY 输入通道）
     term.onData((data) => {
       if (runningRef.current) void postInput(taskId, data);
@@ -120,10 +118,14 @@ export default function TaskView({ taskId }: { taskId: string }) {
         if (closed) return;
         setTask(meta);
         runningRef.current = meta.status === 'running';
-        const events = await fetchEvents(taskId, 0);
-        for (const ev of events) {
+        // 分批拉取历史（server 单次 limit 5000，避免大任务截断）
+        let after = 0;
+        for (;;) {
+          const batch = await fetchEvents(taskId, after);
           if (closed) return;
-          onEvent(ev);
+          for (const ev of batch) onEvent(ev);
+          if (batch.length < 5000) break;
+          after = batch[batch.length - 1].seq;
         }
         // 已结束的任务（非 running）不再连 WS：历史回放模式
         if (meta.status !== 'running') {
@@ -153,8 +155,8 @@ export default function TaskView({ taskId }: { taskId: string }) {
     // 终端尺寸变化 → fit + 转发 resize 给 PTY（TUI 程序按真实尺寸重排）
     const doFit = () => {
       fit.fit();
-      setTermSize(`${fit.cols}×${fit.rows}`);
-      if (runningRef.current) void postResize(taskId, fit.cols, fit.rows);
+      setTermSize(fitSize(fit));
+      if (runningRef.current && Number.isFinite(fit.cols)) void postResize(taskId, fit.cols, fit.rows);
     };
     const ro = new ResizeObserver(doFit);
     ro.observe(document.getElementById('term-host')!);
@@ -200,13 +202,9 @@ export default function TaskView({ taskId }: { taskId: string }) {
               </span>
             )}
           </div>
-          <div
-            className="th-cmd"
-            title={task?.cmd ? '点击复制命令' : undefined}
-            onClick={() => task && void copyText(task.cmd)}
-          >
+          <div className="th-cmd" onClick={() => task && void copyText(task.cmd)}>
             {task?.cmd ?? '加载中…'}
-            {task && <span className="copy-hint">{copied ? '已复制' : '复制命令'}</span>}
+            {task && <span className="copy-hint">{copied ? '已复制' : '复制'}</span>}
           </div>
         </div>
         <div className="th-stats">
@@ -248,21 +246,22 @@ export default function TaskView({ taskId }: { taskId: string }) {
         </div>
       )}
 
-      {/* ③ 间隔时间线：任务节奏 */}
-      <TimelineStrip events={allEventsRef.current} />
+      {/* ③ 间隔时间线：任务节奏（slice 生成新引用，保证实时输出触发重算） */}
+      <TimelineStrip events={allEventsRef.current.slice()} />
 
       {/* ④ 终端窗口 */}
       <div className="term-panel">
         <div className="term-bar">
-          <span className={`ws-ind ws-${wsState}`}>
-            {wsState === 'open' ? '● 实时' : wsState === 'connecting' ? '◌ 连接中' : wsState === 'idle' ? '历史回放' : '✕ 已断开，重连中'}
-          </span>
-          <span className="term-size">{termSize}</span>
+          {wsState !== 'idle' && (
+            <span className={`ws-ind ws-${wsState}`}>
+              {wsState === 'open' ? '● 实时' : wsState === 'connecting' ? '◌ 连接中' : '✕ 已断开，重连中'}
+            </span>
+          )}
+          {running && <span className="term-size">{termSize}</span>}
           <label className="autoscroll" title="新输出自动滚动到底部">
             <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
             自动滚动
           </label>
-          {running && <span className="term-hint">终端可输入</span>}
         </div>
         <div className="term-body">
           <div id="term-host" className="term-host" />
@@ -286,4 +285,10 @@ function Stat({ label, value, warn }: { label: string; value: string; warn?: boo
 function fmtGap(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** 终端尺寸字符串；fit 未就绪（布局未完成）时返回空，避免显示 undefined×undefined */
+function fitSize(fit: FitAddon): string {
+  if (Number.isFinite(fit.cols) && Number.isFinite(fit.rows)) return `${fit.cols}×${fit.rows}`;
+  return '';
 }

@@ -178,7 +178,6 @@ function TaskItem({
               <span className="mini-fill" style={{ width: `${pct}%` }} />
             </span>
           )}
-          {task.status === 'running' && pct == null && <span className="live-dot" />}
         </div>
       </div>
     </div>

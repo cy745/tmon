@@ -31,7 +31,7 @@ export default function TimelineStrip({ events }: { events: TaskEvent[] }) {
     <div className="timeline">
       <div className="tl-row">
         <span className="tl-label" title="整个任务时间轴上的输出间隔（绿=快 → 红=慢，暗格=静默）">
-          节奏
+          全程
         </span>
         <div className="tl-cells">
           {cumulative.cells.map((dt, i) => {
