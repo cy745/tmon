@@ -15,11 +15,13 @@ cd web && npm ci && npx tsc --noEmit # Web 端类型检查
 
 ## 协作流程（issue → 分支 → PR）
 
+> AI Agent 协作注意：**修复类工作请勿在主工作区进行**——使用 git worktree + 独立 Agent 执行（详见 [AGENTS.md](AGENTS.md)），主工作区只做主线开发。
+
 1. **发现问题或想加功能** → 先在 GitHub 创建 issue（用模板：Bug Report / Feature Request），描述清楚：
    - Bug：复现步骤、期望行为、实际行为、平台/版本
    - Feature：动机、使用场景、期望行为
 2. **认领/分配 issue**：在 issue 中留言声明（`/assign` 或让维护者分配）
-3. **新开分支**（命名规范）：
+3. **新开分支**（命名规范，**在独立 worktree 中创建**）：
    - `fix/<issue号>-<简述>` —— 修复
    - `feat/<issue号>-<简述>` —— 新功能
    - `docs/<简述>` —— 文档
@@ -30,7 +32,7 @@ cd web && npm ci && npx tsc --noEmit # Web 端类型检查
    - 关联 issue（`Closes #<issue号>`）
    - 描述改动内容与验证方式
    - CI 通过（GitHub Actions：Linux e2e + 类型检查）
-6. **Review 与合并**：至少一位维护者 review；合并采用 squash。
+6. **Review 与合并**：至少一位维护者 review；合并采用 squash；合并后清理 worktree。
 
 ## 测试
 
