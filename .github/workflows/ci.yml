@@ -37,8 +37,8 @@ jobs:
       - run: bash tests/e2e-linux.sh
 
   e2e-macos:
-    name: E2E (macOS)
-    runs-on: macos-latest
+    name: E2E (macOS x64)
+    runs-on: macos-13
     needs: typecheck
     steps:
       - uses: actions/checkout@v5
@@ -47,18 +47,36 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # macOS arm64 修复：node-pty 1.1.0 的 prebuild 为 darwin-x64，arm64 runner 上
-      # spawn-helper 架构不匹配 → posix_spawnp failed。强制源码编译 arm64 原生模块。
-      - name: Rebuild node-pty for native arch (arm64)
-        run: |
-          echo "runner arch: $(node -p process.arch)"
-          ls node_modules/node-pty/prebuilds/ 2>/dev/null || true
-          npm rebuild node-pty 2>&1 | tail -3
-          SH=$(find node_modules/node-pty -name "spawn-helper" -type f | head -1)
-          echo "rebuilt spawn-helper: $SH"
-          ls -l "$SH" 2>/dev/null || true
-          chmod +x "$SH" 2>/dev/null || true
       - run: bash tests/e2e-linux.sh
+
+  diagnose-macos-arm64:
+    name: Diagnose (macOS arm64)
+    runs-on: macos-14
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: node-pty arm64 编译产物诊断
+        run: |
+          echo "arch: $(node -p process.arch)"
+          echo "--- node-pty 原生产物 ---"
+          find node_modules/node-pty -name "*.node" -o -name "spawn-helper" | head -10
+          echo "--- build/Release ---"
+          ls node_modules/node-pty/build/Release/ 2>/dev/null || echo "(无 build/Release)"
+          echo "--- out/ ---"
+          ls node_modules/node-pty/out/Release/ 2>/dev/null || echo "(无 out/)"
+          echo "--- 直接加载测试 ---"
+          node -e "
+            const pty = require('node-pty');
+            const p = pty.spawn('/bin/sh', ['-c', 'echo spawn-test'], { name: 'xterm', cols: 80, rows: 24 });
+            p.onData((d) => process.stdout.write(d));
+            p.onExit(({ exitCode }) => { console.log('exit:', exitCode); process.exit(exitCode === 0 ? 0 : 1); });
+            setTimeout(() => { console.error('TIMEOUT'); process.exit(1); }, 8000);
+          "
 
   smoke-windows:
     name: Smoke (Windows)
