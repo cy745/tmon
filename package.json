@@ -13,6 +13,7 @@
   "scripts": {
     "start": "node src/cli.ts",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "web:dev": "cd web && npm run dev"
   },
   "engines": {
@@ -26,6 +27,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/ws": "^8.5.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.10"
   }
 }
