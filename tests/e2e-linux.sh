@@ -15,7 +15,13 @@ api() { curl -s -H "authorization: Bearer $TOKEN" "$@"; }
 post_input() { curl -s -X POST -H "authorization: Bearer $TOKEN" -H "content-type: application/json" -d "$2" "http://127.0.0.1:$PORT/api/tasks/$1/input" >/dev/null; }
 
 echo "== 0. 基础执行（sh -c 路径 + forkpty） =="
-OUT=$(node bin/tmon.js "echo hello-linux && uname -s" 2>/dev/null) || { fail "基础执行失败"; }
+# 2>&1 合并：失败时保留完整 stderr（tmon 错误信息可见，便于跨平台排障）
+OUT=$(node bin/tmon.js "echo hello-linux && uname -s" 2>&1) || {
+  fail "基础执行失败"
+  echo "---- stderr/stdout 合并输出 ----"
+  echo "$OUT" | head -8
+  echo "------------------------------"
+}
 echo "$OUT" | grep -q "hello-linux" && pass "输出透传" || fail "输出透传: $OUT"
 echo "$OUT" | grep -qi "linux" && pass "uname 输出" || fail "uname 输出"
 
