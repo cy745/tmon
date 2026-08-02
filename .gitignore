@@ -18,3 +18,5 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+# Vite dev 缓存
+web/.vite/
