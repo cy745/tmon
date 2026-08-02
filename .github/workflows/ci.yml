@@ -47,6 +47,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # node-pty prebuild 无 darwin-arm64（上游 #850 系列）：强制源码编译 arm64 原生模块
+      - name: Build node-pty from source (arm64)
+        run: npm rebuild node-pty --build-from-source 2>&1 | tail -3
       - run: bash tests/e2e-linux.sh
 
   smoke-windows:
