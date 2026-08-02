@@ -8,6 +8,7 @@ import {
   fmtDur,
   postInput,
   postKill,
+  postResize,
   STATUS_LABEL,
   type TaskEvent,
   type TaskMeta,
@@ -131,10 +132,19 @@ export default function TaskView({ taskId }: { taskId: string }) {
     };
     void init();
 
-    const ro = new ResizeObserver(() => fit.fit());
+    // 终端尺寸变化 → fit + 转发 resize 给 PTY（TUI 程序按真实尺寸重排）
+    const doFit = () => {
+      fit.fit();
+      if (runningRef.current) {
+        void postResize(taskId, fit.cols, fit.rows);
+      }
+    };
+    const ro = new ResizeObserver(doFit);
     ro.observe(document.getElementById('term-host')!);
-    const onResize = () => fit.fit();
+    const onResize = () => doFit();
     window.addEventListener('resize', onResize);
+    // 初始 fit 后同步一次尺寸
+    setTimeout(doFit, 100);
 
     return () => {
       closed = true;
