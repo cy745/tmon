@@ -19,16 +19,17 @@ Agent 改用：  tmon "curl -o big.bin <url>"    # 输出原样返回，行为�
 
 | 文档 | 说明 |
 |---|---|
-| [docs/01-requirements.md](docs/01-requirements.md) | 需求文档 v0.3（含 2026-08-03 决策：skill 指引替代 hook 强制） |
+| [docs/01-requirements.md](docs/01-requirements.md) | 需求文档 v0.2（已回填调研结论，FR/架构/路线图定稿） |
 | [docs/02-research-report.md](docs/02-research-report.md) | 全网调研报告（开源现状、Agent 生态、技术选型、命名冲突，含引用） |
-| [docs/03-design.md](docs/03-design.md) | 详细设计 v0.2（事件协议 / JSONL 落盘 / 进程模型 / 进度 IPC / skill 指引） |
 
 ## 状态
 
-- ✅ 需求 v0.3 + 调研报告 + 详细设计 v0.2（2026-08-02/03）
-- ✅ **v0.1 MVP**：wrapper + 时间戳 + Web 实时视图（间隔可视化）+ Ctrl-C 取消 + Agent 查询 + 进度上报（Windows 实测通过）
-- ✅ 决策：放弃 hook 强制层，改为 **skill 指引**（2026-08-03）
-- 🔄 下一步：skill 文件、Linux 实测、自动化测试、输出净化、发布打包
+- ✅ 需求文档 v0.2 + 调研报告（2026-08-02）
+- 🔄 详细设计文档（事件协议 / JSONL 落盘 / hook 强制层 / IPC 进度 API）
+- ⬜ v0.1 MVP：wrapper + 行时间戳 + Web 实时视图 + Ctrl-C 取消
+- ⬜ v0.2：跨平台（node-pty ConPTY/forkpty）+ PTY 全终端交互 + Agent 侧状态查询 CLI
+- ⬜ v0.3：脚本进度 API + 静默告警
+- ⬜ v1.0：多任务 + 历史回放 + 部署文档
 
 ## 技术选型（调研定稿）
 
