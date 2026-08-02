@@ -8,13 +8,20 @@
   },
   "files": [
     "bin",
-    "src"
+    "src",
+    "web/dist",
+    "docs",
+    "skills",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
   ],
   "scripts": {
     "start": "node src/cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "web:dev": "cd web && npm run dev"
+    "web:dev": "cd web && npm run dev",
+    "prepack": "cd web && npm run build"
   },
   "engines": {
     "node": ">=22.18"
