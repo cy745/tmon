@@ -38,14 +38,20 @@ async function run(argv: string[]): Promise<number> {
     console.error('tmon: 用法: tmon "命令字符串"  或  tmon 命令 参数...');
     return 2;
   }
-  const cmd = argv.join(' ');
+  // --raw：关闭 Agent 侧 ANSI 净化（FR-9，默认净化），必须是第一个参数
+  const cleanStdout = argv[0] !== '--raw';
+  const cmd = (cleanStdout ? argv : argv.slice(1)).join(' ');
+  if (!cmd) {
+    console.error('tmon: 用法: tmon "命令字符串"  或  tmon 命令 参数...');
+    return 2;
+  }
   const { port, token } = await ensureServer();
   const taskId = crypto.randomBytes(4).toString('hex');
   // stderr 打印任务 id，不污染 stdout（Agent 可后台执行后由此取 id）
   console.error(`tmon: task ${taskId} started: ${cmd}`);
   // 动态加载：只有 run 需要 node-pty（查询类命令不加载 native 模块，避免 Node 25 libuv 断言噪声）
   const { runTask } = await import('./executor.ts');
-  const result = await runTask({ taskId, token, port, cmd });
+  const result = await runTask({ taskId, token, port, cmd, cleanStdout });
   if (result.status === 'killed') {
     console.error(`tmon: task ${taskId} 已终止（killed）`);
     return 130;

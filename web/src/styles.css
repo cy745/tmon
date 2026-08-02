@@ -441,7 +441,16 @@ body {
 .action-err { color: var(--red); font-size: 12.5px; }
 .action-ok { color: var(--accent); font-size: 12.5px; }
 
-/* ② 进度区 */
+/* ② 静默告警横幅 */
+.silent-banner {
+  border-left: 2px solid var(--orange);
+  color: var(--orange);
+  font-size: 12px;
+  padding: 4px 12px;
+  animation: pulse 1.5s infinite;
+}
+
+/* ③ 进度区 */
 .progress-section {
   display: flex;
   align-items: center;

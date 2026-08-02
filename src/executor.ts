@@ -6,6 +6,7 @@ import { exec } from 'node:child_process';
 import WebSocket from 'ws';
 import type { TaskMeta, TaskStatus, WsServerMsg } from './protocol.ts';
 import { cleanChunk } from './encoding.ts';
+import { stripAnsi } from './sanitize.ts';
 
 /** 事件负载（不含 seq/ts/dt，由 emit 填充） */
 type EventBody =
@@ -22,6 +23,8 @@ export interface ExecutorOptions {
   cwd?: string;
   cols?: number;
   rows?: number;
+  /** Agent 侧输出净化（FR-9）：默认剥离 ANSI；--raw 关闭 */
+  cleanStdout?: boolean;
 }
 
 export interface ExecutorResult {
@@ -204,8 +207,8 @@ export function runTask(opts: ExecutorOptions): Promise<ExecutorResult> {
       }
       pty.onData((data) => {
         const cleaned = cleanChunk(data);
-        // ① 原样写回 stdout（Agent 侧透明，含 ANSI）
-        process.stdout.write(cleaned);
+        // ① 写回 stdout（Agent 侧；默认剥离 ANSI 防污染解析，--raw 时原样）
+        process.stdout.write(opts.cleanStdout === false ? cleaned : stripAnsi(cleaned));
         // ② 上报 server（Web 端完整流）
         emit({ type: 'output', stream: 'stdout', data: cleaned });
       });

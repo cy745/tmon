@@ -25,6 +25,7 @@ export default function TaskView({ taskId }: { taskId: string }) {
   const [copied, setCopied] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [termSize, setTermSize] = useState('');
+  const [silentMs, setSilentMs] = useState(0);
 
   const termRef = useRef<Terminal | null>(null);
   const gapsRef = useRef<number[]>([]);
@@ -32,6 +33,7 @@ export default function TaskView({ taskId }: { taskId: string }) {
   const lastSeqRef = useRef(0);
   const runningRef = useRef(false);
   const allEventsRef = useRef<TaskEvent[]>([]);
+  const lastOutputTsRef = useRef(0);
   const [, forceRender] = useState(0);
 
   const bump = useCallback(() => forceRender((n) => n + 1), []);
@@ -74,6 +76,7 @@ export default function TaskView({ taskId }: { taskId: string }) {
         gapsRef.current.push(ev.dt);
         if (gapsRef.current.length > 60) gapsRef.current.shift();
         outputCountRef.current++;
+        lastOutputTsRef.current = ev.ts;
         if (autoScrollRef.current) termRef.current?.scrollToBottom();
         bump();
       } else if (ev.type === 'progress') {
@@ -164,8 +167,16 @@ export default function TaskView({ taskId }: { taskId: string }) {
     window.addEventListener('resize', onWinResize);
     setTimeout(doFit, 100);
 
+    // 静默检测（FR-6）：running 时每秒刷新"距最后输出的秒数"，超阈值触发横幅
+    const silentTimer = setInterval(() => {
+      if (lastOutputTsRef.current > 0) {
+        setSilentMs(Date.now() - lastOutputTsRef.current);
+      }
+    }, 1000);
+
     return () => {
       closed = true;
+      clearInterval(silentTimer);
       ro.disconnect();
       window.removeEventListener('resize', onWinResize);
       ws?.close();
@@ -234,7 +245,14 @@ export default function TaskView({ taskId }: { taskId: string }) {
         </div>
       </div>
 
-      {/* ② 进度区：脚本上报 progress/stage 时显示 */}
+      {/* ② 静默告警：距最后输出超过阈值时醒目提示 */}
+      {running && silentMs > 30000 && (
+        <div className="silent-banner" title="无输出超过 30 秒">
+          已静默 {(silentMs / 1000).toFixed(0)}s——任务可能卡住，可尝试 Ctrl-C
+        </div>
+      )}
+
+      {/* ③ 进度区：脚本上报 progress/stage 时显示 */}
       {showProgress && (
         <div className="progress-section">
           <div className="progress-track">
