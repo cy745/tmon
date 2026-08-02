@@ -22,11 +22,13 @@ Agent 改用：  tmon "curl -o big.bin <url>"    # 输出原样返回，行为�
 | [docs/01-requirements.md](docs/01-requirements.md) | 需求文档 v0.3（含 2026-08-03 决策：skill 指引替代 hook 强制） |
 | [docs/02-research-report.md](docs/02-research-report.md) | 全网调研报告（开源现状、Agent 生态、技术选型、命名冲突，含引用） |
 | [docs/03-design.md](docs/03-design.md) | 详细设计 v0.2（事件协议 / JSONL 落盘 / 进程模型 / 进度 IPC / skill 指引） |
+| [docs/04-web-design.md](docs/04-web-design.md) | Web 端布局与样式设计 v1.0（左右分栏工作台 + 极简主义风格，已实现验收） |
 
 ## 状态
 
 - ✅ 需求 v0.3 + 调研报告 + 详细设计 v0.2（2026-08-02/03）
 - ✅ **v0.1 MVP**：wrapper + 时间戳 + Web 实时视图（间隔可视化）+ Ctrl-C 取消 + Agent 查询 + 进度上报（Windows 实测通过）
+- ✅ **Web 端 v1.0**：左右分栏任务工作台 + 极简主义风格（2026-08-03 验收通过）
 - ✅ 决策：放弃 hook 强制层，改为 **skill 指引**（2026-08-03）
 - 🔄 下一步：skill 文件、Linux 实测、自动化测试、输出净化、发布打包
 
