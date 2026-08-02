@@ -168,7 +168,10 @@ function TaskItem({
           <span className="ti-cmd">{task.cmd}</span>
         </div>
         <div className="ti-line2">
-          <span className={`badge badge-${task.status}`}>{STATUS_LABEL[task.status]}</span>
+          <span className={`badge badge-${task.status}`}>
+            <span className="dot" />
+            {STATUS_LABEL[task.status]}
+          </span>
           <span className="ti-elapsed">{fmtDur(elapsed)}</span>
           {task.status === 'running' && pct != null && (
             <span className="mini-progress" title={`${pct}%`}>

@@ -193,7 +193,12 @@ export default function TaskView({ taskId }: { taskId: string }) {
         <div className="th-identity">
           <div className="th-line1">
             <span className="task-id big">{taskId}</span>
-            {task && <span className={`badge badge-${task.status}`}>{STATUS_LABEL[task.status]}</span>}
+            {task && (
+              <span className={`badge badge-${task.status}`}>
+                <span className="dot" />
+                {STATUS_LABEL[task.status]}
+              </span>
+            )}
           </div>
           <div
             className="th-cmd"
@@ -201,7 +206,7 @@ export default function TaskView({ taskId }: { taskId: string }) {
             onClick={() => task && void copyText(task.cmd)}
           >
             {task?.cmd ?? '加载中…'}
-            {task && <span className="copy-hint">{copied ? '✓ 已复制' : '⧉'}</span>}
+            {task && <span className="copy-hint">{copied ? '已复制' : '复制命令'}</span>}
           </div>
         </div>
         <div className="th-stats">
@@ -215,7 +220,7 @@ export default function TaskView({ taskId }: { taskId: string }) {
           {actionOk && <span className="action-ok">✓ {actionOk}</span>}
           {task && (
             <button className="btn btn-ghost" onClick={() => void copyText(task.id)} title="复制任务 id">
-              ⧉ 复制 id
+              {copied ? '已复制' : '复制 id'}
             </button>
           )}
           {running && (
