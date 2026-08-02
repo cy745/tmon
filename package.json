@@ -1,8 +1,29 @@
 {
   "name": "tmon",
   "version": "0.1.0",
-  "description": "AI Agent 命令执行追踪与监控工具",
+  "description": "Real-time terminal monitoring & control for AI Agent long-running commands",
   "type": "module",
+  "keywords": [
+    "ai-agent",
+    "terminal",
+    "monitor",
+    "pty",
+    "cli",
+    "process",
+    "long-running",
+    "observability",
+    "tui"
+  ],
+  "license": "MIT",
+  "author": "cy745",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cy745/tmon.git"
+  },
+  "homepage": "https://github.com/cy745/tmon#readme",
+  "bugs": {
+    "url": "https://github.com/cy745/tmon/issues"
+  },
   "bin": {
     "tmon": "bin/tmon.js"
   },
