@@ -47,13 +47,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # node-pty#850：npm tarball 中 spawn-helper 丢失执行位 → macOS posix_spawnp failed
-      # 验证：chmod +x 后重跑 e2e；若通过则正式方案改为 postinstall 修复脚本
-      - name: Fix node-pty spawn-helper exec bit (workaround)
+      # macOS arm64 修复：node-pty 1.1.0 的 prebuild 为 darwin-x64，arm64 runner 上
+      # spawn-helper 架构不匹配 → posix_spawnp failed。强制源码编译 arm64 原生模块。
+      - name: Rebuild node-pty for native arch (arm64)
         run: |
+          echo "runner arch: $(node -p process.arch)"
+          ls node_modules/node-pty/prebuilds/ 2>/dev/null || true
+          npm rebuild node-pty 2>&1 | tail -3
           SH=$(find node_modules/node-pty -name "spawn-helper" -type f | head -1)
-          echo "spawn-helper: $SH"
-          ls -l "$SH" 2>/dev/null || echo "spawn-helper 未找到（则非此原因）"
+          echo "rebuilt spawn-helper: $SH"
+          ls -l "$SH" 2>/dev/null || true
           chmod +x "$SH" 2>/dev/null || true
       - run: bash tests/e2e-linux.sh
 
