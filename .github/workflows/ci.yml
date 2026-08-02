@@ -37,8 +37,8 @@ jobs:
       - run: bash tests/e2e-linux.sh
 
   e2e-macos:
-    name: E2E (macOS x64)
-    runs-on: macos-13
+    name: E2E (macOS)
+    runs-on: macos-latest
     needs: typecheck
     steps:
       - uses: actions/checkout@v5
@@ -47,6 +47,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # node-pty prebuild 无 darwin-arm64（上游 #850 系列）：强制源码编译 arm64 原生模块
+      - name: Build node-pty from source (arm64)
+        run: |
+          echo "arch: $(node -p process.arch)"
+          npm rebuild node-pty --build-from-source 2>&1 | tail -5
+          echo "--- build 产物 ---"
+          ls -la node_modules/node-pty/build/Release/ 2>/dev/null || echo "(无 build/Release)"
       - run: bash tests/e2e-linux.sh
 
   diagnose-macos-arm64:
