@@ -36,6 +36,19 @@ jobs:
       - run: npm ci
       - run: bash tests/e2e-linux.sh
 
+  e2e-macos:
+    name: E2E (macOS)
+    runs-on: macos-latest
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: bash tests/e2e-linux.sh
+
   smoke-windows:
     name: Smoke (Windows)
     runs-on: windows-latest
