@@ -13,9 +13,7 @@ import {
   type TaskEvent,
   type TaskMeta,
 } from './api.ts';
-
-const GAP_WINDOW = 60; // 间隔热力条展示的最近 chunk 数
-const MAX_SILENT = 30000; // 间隔图中最长刻度（>30s 显示为"已截断"）
+import TimelineStrip from './TimelineStrip.tsx';
 
 export default function TaskView({ taskId }: { taskId: string }) {
   const [task, setTask] = useState<TaskMeta | null>(null);
@@ -24,6 +22,20 @@ export default function TaskView({ taskId }: { taskId: string }) {
   const [wsState, setWsState] = useState<'idle' | 'connecting' | 'open' | 'closed'>('connecting');
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [actionOk, setActionOk] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [termSize, setTermSize] = useState('');
+
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const gapsRef = useRef<number[]>([]);
+  const outputCountRef = useRef(0);
+  const lastSeqRef = useRef(0);
+  const runningRef = useRef(false);
+  const allEventsRef = useRef<TaskEvent[]>([]);
+  const [, forceRender] = useState(0);
+
+  const bump = useCallback(() => forceRender((n) => n + 1), []);
 
   const doKill = useCallback(
     async (signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL') => {
@@ -40,24 +52,30 @@ export default function TaskView({ taskId }: { taskId: string }) {
     [taskId],
   );
 
-  const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
-  const gapsRef = useRef<number[]>([]);
-  const outputCountRef = useRef(0);
-  const lastSeqRef = useRef(0);
-  const runningRef = useRef(false);
-  const [, forceRender] = useState(0);
-
-  const bump = useCallback(() => forceRender((n) => n + 1), []);
+  const copyText = useCallback(
+    async (text: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch {
+        /* clipboard 不可用时忽略 */
+      }
+    },
+    [],
+  );
 
   const onEvent = useCallback(
     (ev: TaskEvent) => {
       lastSeqRef.current = Math.max(lastSeqRef.current, ev.seq);
+      allEventsRef.current.push(ev);
+      if (allEventsRef.current.length > 20000) allEventsRef.current.splice(0, 5000); // 窗口化防爆
       if (ev.type === 'output') {
         termRef.current?.write(ev.data);
         gapsRef.current.push(ev.dt);
-        if (gapsRef.current.length > GAP_WINDOW) gapsRef.current.shift();
+        if (gapsRef.current.length > 60) gapsRef.current.shift();
         outputCountRef.current++;
+        if (autoScrollRef.current) termRef.current?.scrollToBottom();
         bump();
       } else if (ev.type === 'progress') {
         setPct(ev.pct);
@@ -71,14 +89,15 @@ export default function TaskView({ taskId }: { taskId: string }) {
     },
     [bump],
   );
+  const autoScrollRef = useRef(autoScroll);
+  autoScrollRef.current = autoScroll;
 
   useEffect(() => {
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 13,
       fontFamily: 'Consolas, "Cascadia Mono", monospace',
-      theme: { background: '#0d1117', foreground: '#e6edf3' },
-      convertEol: false,
+      theme: { background: '#0d1117', foreground: '#e6edf3', cursor: '#58a6ff' },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -86,6 +105,7 @@ export default function TaskView({ taskId }: { taskId: string }) {
     fitRef.current = fit;
     term.open(document.getElementById('term-host')!);
     fit.fit();
+    setTermSize(`${fit.cols}×${fit.rows}`);
     // 键盘输入 → 转发给正在运行的进程（PTY 输入通道）
     term.onData((data) => {
       if (runningRef.current) void postInput(taskId, data);
@@ -118,7 +138,6 @@ export default function TaskView({ taskId }: { taskId: string }) {
             onClose: () => {
               if (closed) return;
               setWsState('closed');
-              // 断线重连（2s 退避）
               setTimeout(connect, 2000);
             },
             onEvent,
@@ -126,7 +145,6 @@ export default function TaskView({ taskId }: { taskId: string }) {
         };
         connect();
       } catch {
-        // 任务不存在等：不显示连接状态
         setWsState('idle');
       }
     };
@@ -135,26 +153,25 @@ export default function TaskView({ taskId }: { taskId: string }) {
     // 终端尺寸变化 → fit + 转发 resize 给 PTY（TUI 程序按真实尺寸重排）
     const doFit = () => {
       fit.fit();
-      if (runningRef.current) {
-        void postResize(taskId, fit.cols, fit.rows);
-      }
+      setTermSize(`${fit.cols}×${fit.rows}`);
+      if (runningRef.current) void postResize(taskId, fit.cols, fit.rows);
     };
     const ro = new ResizeObserver(doFit);
     ro.observe(document.getElementById('term-host')!);
-    const onResize = () => doFit();
-    window.addEventListener('resize', onResize);
-    // 初始 fit 后同步一次尺寸
+    const onWinResize = () => doFit();
+    window.addEventListener('resize', onWinResize);
     setTimeout(doFit, 100);
 
     return () => {
       closed = true;
       ro.disconnect();
-      window.removeEventListener('resize', onResize);
+      window.removeEventListener('resize', onWinResize);
       ws?.close();
       term.dispose();
       termRef.current = null;
       gapsRef.current = [];
       outputCountRef.current = 0;
+      allEventsRef.current = [];
     };
   }, [taskId, onEvent]);
 
@@ -167,72 +184,88 @@ export default function TaskView({ taskId }: { taskId: string }) {
   }, [task, bump]);
 
   const running = task?.status === 'running';
+  const showProgress = pct !== null || (running && !!stage);
 
   return (
     <div className="task-view">
-      <div className="task-head">
-        <div className="task-head-line">
-          <span className="task-id big">{taskId}</span>
-          {task && <span className={`badge badge-${task.status}`}>{STATUS_LABEL[task.status]}</span>}
-          {task && <span className="muted">{task.cmd}</span>}
+      {/* ① 任务头：身份 + 统计 + 操作 */}
+      <div className="task-header">
+        <div className="th-identity">
+          <div className="th-line1">
+            <span className="task-id big">{taskId}</span>
+            {task && <span className={`badge badge-${task.status}`}>{STATUS_LABEL[task.status]}</span>}
+          </div>
+          <div
+            className="th-cmd"
+            title={task?.cmd ? '点击复制命令' : undefined}
+            onClick={() => task && void copyText(task.cmd)}
+          >
+            {task?.cmd ?? '加载中…'}
+            {task && <span className="copy-hint">{copied ? '✓ 已复制' : '⧉'}</span>}
+          </div>
         </div>
-        <div className="stats-bar">
+        <div className="th-stats">
           <Stat label="总时长" value={fmtDur(stats.elapsed)} />
           <Stat label="输出行数" value={String(stats.lines)} />
-          <Stat label="最近间隔" value={stats.lastGap < 1000 ? `${Math.round(stats.lastGap)}ms` : `${(stats.lastGap / 1000).toFixed(1)}s`} warn={stats.lastGap > 5000} />
-          <Stat label="最长静默" value={stats.maxGap < 1000 ? `${Math.round(stats.maxGap)}ms` : `${(stats.maxGap / 1000).toFixed(1)}s`} warn={stats.maxGap > 10000} />
-          {pct !== null && (
-            <div className="progress">
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${pct}%` }} />
-              </div>
-              <span className="progress-label">
-                {stage ?? '执行中'} {pct}%
-              </span>
-            </div>
+          <Stat label="最近间隔" value={fmtGap(stats.lastGap)} warn={stats.lastGap > 5000} />
+          <Stat label="最长静默" value={fmtGap(stats.maxGap)} warn={stats.maxGap > 10000} />
+        </div>
+        <div className="th-actions">
+          {actionErr && <span className="action-err">✗ {actionErr}</span>}
+          {actionOk && <span className="action-ok">✓ {actionOk}</span>}
+          {task && (
+            <button className="btn btn-ghost" onClick={() => void copyText(task.id)} title="复制任务 id">
+              ⧉ 复制 id
+            </button>
+          )}
+          {running && (
+            <>
+              <button className="btn" onClick={() => void doKill('SIGINT')} title="发送 Ctrl-C（SIGINT），5s 未退自动升级">
+                Ctrl-C
+              </button>
+              <button className="btn btn-danger" onClick={() => void doKill('SIGKILL')} title="强制终止（SIGKILL）">
+                强制终止
+              </button>
+            </>
           )}
         </div>
       </div>
 
-      <div className="gap-strip" title="最近 60 个输出块的行间间隔（绿色=快，红色=慢）">
-        {stats.lastGap >= 0 &&
-          gapsRef.current.map((dt, i) => {
-            const r = Math.min(dt / MAX_SILENT, 1);
-            const hue = 120 - r * 120;
-            return (
-              <span
-                key={i}
-                className="gap-bar"
-                style={{ width: `${Math.max(100 / GAP_WINDOW, r * 100)}%`, background: `hsl(${hue} 80% 45%)` }}
-                title={`${Math.round(dt)}ms`}
-              />
-            );
-          })}
-      </div>
-
-      <div className="term-toolbar">
-        <span className={`ws-ind ws-${wsState}`}>
-          {wsState === 'open' ? '实时连接' : wsState === 'connecting' ? '连接中…' : wsState === 'idle' ? '历史回放（任务已结束）' : '已断开，重连中…'}
-        </span>
-        <span className="toolbar-spacer" />
-        {actionErr && <span className="action-err">✗ {actionErr}</span>}
-        {actionOk && <span className="action-ok">✓ {actionOk}</span>}
-        {running && (
-          <>
-            <button className="btn" onClick={() => void doKill('SIGINT')} title="发送 Ctrl-C（SIGINT），5s 未退自动升级">
-              Ctrl-C
-            </button>
-            <button className="btn btn-danger" onClick={() => void doKill('SIGKILL')} title="强制终止（SIGKILL）">
-              强制终止
-            </button>
-          </>
-        )}
-      </div>
-
-      <div id="term-host" className="term-host" />
-      {running && (
-        <div className="term-hint">终端可输入——键盘输入将直接转发给正在运行的进程</div>
+      {/* ② 进度区：脚本上报 progress/stage 时显示 */}
+      {showProgress && (
+        <div className="progress-section">
+          <div className="progress-track">
+            <div className="progress-fill" style={{ width: `${pct ?? 0}%` }} />
+          </div>
+          <span className="progress-label">
+            {stage ?? '执行中'} {pct != null ? `${pct}%` : ''}
+          </span>
+        </div>
       )}
+
+      {/* ③ 间隔时间线：任务节奏 */}
+      <TimelineStrip events={allEventsRef.current} />
+
+      {/* ④ 终端窗口 */}
+      <div className="term-panel">
+        <div className="term-bar">
+          <span className={`ws-ind ws-${wsState}`}>
+            {wsState === 'open' ? '● 实时' : wsState === 'connecting' ? '◌ 连接中' : wsState === 'idle' ? '历史回放' : '✕ 已断开，重连中'}
+          </span>
+          <span className="term-size">{termSize}</span>
+          <label className="autoscroll" title="新输出自动滚动到底部">
+            <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
+            自动滚动
+          </label>
+          {running && <span className="term-hint">终端可输入</span>}
+        </div>
+        <div className="term-body">
+          <div id="term-host" className="term-host" />
+          {task && !running && (
+            <div className={`term-overlay-badge badge-${task.status}`}>{STATUS_LABEL[task.status]}</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -243,4 +276,9 @@ function Stat({ label, value, warn }: { label: string; value: string; warn?: boo
       <span className="stat-label">{label}</span> {value}
     </span>
   );
+}
+
+function fmtGap(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }

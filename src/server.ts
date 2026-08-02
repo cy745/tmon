@@ -60,6 +60,18 @@ export async function serve(): Promise<void> {
       }
       return;
     }
+    // 进度事件同步到 meta（侧边栏微进度条数据源）
+    if (ev.type === 'progress' || ev.type === 'stage') {
+      const meta = store.get(conn.taskId);
+      if (meta) {
+        if (ev.type === 'progress') {
+          meta.latestPct = ev.pct;
+          if (ev.msg) meta.latestStage = ev.msg;
+        } else {
+          meta.latestStage = ev.name;
+        }
+      }
+    }
     broadcast(conn.taskId, { event: ev }, conn);
   }
 

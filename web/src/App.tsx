@@ -1,35 +1,70 @@
 import { useEffect, useState } from 'react';
-import TaskList from './TaskList.tsx';
+import Sidebar from './Sidebar.tsx';
 import TaskView from './TaskView.tsx';
 
-// hash 路由：#/task/<id> → 详情页；其余 → 列表页
+// hash 路由兼容：#/task/<id> 直接打开并选中对应任务
 function currentTaskId(): string | null {
   const m = location.hash.match(/^#\/task\/([0-9a-f]{8})$/);
   return m ? m[1] : null;
 }
 
 export default function App() {
-  const [taskId, setTaskId] = useState<string | null>(currentTaskId());
+  const [selectedId, setSelectedId] = useState<string | null>(currentTaskId());
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    const onHash = () => setTaskId(currentTaskId());
+    const onHash = () => setSelectedId(currentTaskId());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
+  const select = (id: string | null) => {
+    setSelectedId(id);
+    if (id) {
+      location.hash = `#/task/${id}`;
+    } else {
+      history.replaceState(null, '', location.pathname);
+    }
+    if (window.innerWidth < 900) setSidebarOpen(false);
+  };
+
   return (
     <div className="app">
-      <header className="topbar">
-        <a className="brand" href="#/">
-          <span className="brand-dot" /> tmon <span className="brand-sub">任务监控</span>
-        </a>
-        {taskId && (
-          <a className="back" href="#/">
-            ← 任务列表
-          </a>
-        )}
-      </header>
-      {taskId ? <TaskView key={taskId} taskId={taskId} /> : <TaskList onOpen={(id) => (location.hash = `#/task/${id}`)} />}
+      <Sidebar selectedId={selectedId} onSelect={select} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      {sidebarOpen && <div className="sidebar-mask" onClick={() => setSidebarOpen(false)} />}
+      <main className="main">
+        <button
+          className="hamburger"
+          onClick={() => setSidebarOpen((o) => !o)}
+          title="任务列表"
+          aria-label="打开任务列表"
+        >
+          ☰
+        </button>
+        {selectedId ? <TaskView key={selectedId} taskId={selectedId} /> : <EmptyState />}
+      </main>
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="empty-state">
+      <div className="es-logo">
+        <span className="brand-dot" />
+        tmon
+      </div>
+      <h2>任务监控台</h2>
+      <p className="es-desc">
+        让 Agent（或你自己）用 <code>tmon</code> 执行命令，即可在这里实时查看输出、节奏与进度。
+      </p>
+      <pre className="es-code">
+        <code>tmon "curl -o big.bin https://example.com/big.bin"</code>
+      </pre>
+      <p className="es-hint">想先试试？启动交互式演示：</p>
+      <pre className="es-code">
+        <code>node bin/tmon.js "node demo-interactive.mjs"</code>
+      </pre>
     </div>
   );
 }
