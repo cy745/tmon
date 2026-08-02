@@ -1,7 +1,6 @@
 // tmon CLI 命令面（docs/03-design.md §2）
 import crypto from 'node:crypto';
 import { ensureServer } from './discover.ts';
-import { runTask } from './executor.ts';
 import { reportProgress } from './progress.ts';
 import { serve as startServer } from './server.ts';
 import { toReadableText } from './sanitize.ts';
@@ -44,6 +43,8 @@ async function run(argv: string[]): Promise<number> {
   const taskId = crypto.randomBytes(4).toString('hex');
   // stderr 打印任务 id，不污染 stdout（Agent 可后台执行后由此取 id）
   console.error(`tmon: task ${taskId} started: ${cmd}`);
+  // 动态加载：只有 run 需要 node-pty（查询类命令不加载 native 模块，避免 Node 25 libuv 断言噪声）
+  const { runTask } = await import('./executor.ts');
   const result = await runTask({ taskId, token, port, cmd });
   if (result.status === 'killed') {
     console.error(`tmon: task ${taskId} 已终止（killed）`);

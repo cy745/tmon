@@ -21,6 +21,23 @@ export default function TaskView({ taskId }: { taskId: string }) {
   const [pct, setPct] = useState<number | null>(null);
   const [stage, setStage] = useState<string | null>(null);
   const [wsState, setWsState] = useState<'connecting' | 'open' | 'closed'>('connecting');
+  const [actionErr, setActionErr] = useState<string | null>(null);
+  const [actionOk, setActionOk] = useState<string | null>(null);
+
+  const doKill = useCallback(
+    async (signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL') => {
+      setActionErr(null);
+      setActionOk(null);
+      try {
+        await postKill(taskId, signal);
+        setActionOk(`已发送 ${signal}`);
+        setTimeout(() => setActionOk(null), 3000);
+      } catch (e) {
+        setActionErr((e as Error).message);
+      }
+    },
+    [taskId],
+  );
 
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -184,12 +201,14 @@ export default function TaskView({ taskId }: { taskId: string }) {
           {wsState === 'open' ? '实时连接' : wsState === 'connecting' ? '连接中…' : '已断开，重连中…'}
         </span>
         <span className="toolbar-spacer" />
+        {actionErr && <span className="action-err">✗ {actionErr}</span>}
+        {actionOk && <span className="action-ok">✓ {actionOk}</span>}
         {running && (
           <>
-            <button className="btn" onClick={() => void postKill(taskId, 'SIGINT')} title="发送 Ctrl-C（SIGINT），5s 未退自动升级">
+            <button className="btn" onClick={() => void doKill('SIGINT')} title="发送 Ctrl-C（SIGINT），5s 未退自动升级">
               Ctrl-C
             </button>
-            <button className="btn btn-danger" onClick={() => void postKill(taskId, 'SIGKILL')} title="强制终止（SIGKILL）">
+            <button className="btn btn-danger" onClick={() => void doKill('SIGKILL')} title="强制终止（SIGKILL）">
               强制终止
             </button>
           </>

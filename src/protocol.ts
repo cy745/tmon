@@ -20,7 +20,7 @@ export type TaskEvent =
   | { type: 'output'; seq: number; ts: number; dt: number; stream: 'stdout' | 'stderr'; data: string }
   | { type: 'progress'; seq: number; ts: number; dt: number; pct: number; msg?: string }
   | { type: 'stage'; seq: number; ts: number; dt: number; name: string }
-  | { type: 'status'; seq: number; ts: number; status: TaskStatus; exitCode: number | null };
+  | { type: 'status'; seq: number; ts: number; dt: number; status: TaskStatus; exitCode: number | null };
 
 /** WS 上行（client → server），首消息必为 hello */
 export type WsClientMsg =

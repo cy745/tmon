@@ -19,7 +19,7 @@ export type TaskEvent =
   | { type: 'output'; seq: number; ts: number; dt: number; stream: 'stdout' | 'stderr'; data: string }
   | { type: 'progress'; seq: number; ts: number; dt: number; pct: number; msg?: string }
   | { type: 'stage'; seq: number; ts: number; dt: number; name: string }
-  | { type: 'status'; seq: number; ts: number; status: TaskStatus; exitCode: number | null };
+  | { type: 'status'; seq: number; ts: number; dt: number; status: TaskStatus; exitCode: number | null };
 
 export async function fetchTasks(): Promise<TaskMeta[]> {
   const res = await fetch('/api/tasks');
@@ -40,11 +40,15 @@ export async function fetchEvents(id: string, after = 0): Promise<TaskEvent[]> {
 }
 
 export async function postKill(id: string, signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL'): Promise<void> {
-  await fetch(`/api/tasks/${id}/kill`, {
+  const res = await fetch(`/api/tasks/${id}/kill`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ signal }),
   });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `终止失败（HTTP ${res.status}）`);
+  }
 }
 
 export async function postInput(id: string, data: string): Promise<void> {

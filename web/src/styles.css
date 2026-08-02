@@ -271,6 +271,16 @@ body {
 .ws-connecting { color: var(--muted); }
 .ws-closed { color: var(--red); }
 
+.action-err {
+  color: var(--red);
+  font-size: 13px;
+}
+
+.action-ok {
+  color: var(--green);
+  font-size: 13px;
+}
+
 .btn {
   background: var(--bg2);
   border: 1px solid var(--border);

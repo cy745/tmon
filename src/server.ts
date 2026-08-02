@@ -94,7 +94,16 @@ export async function serve(): Promise<void> {
         const body = (await readBody(req)) as Record<string, unknown>;
         if (action === 'kill') {
           const agent = agentOf(id);
-          if (!agent) return json(res, 409, { error: '任务无 agent 连接（已结束或 server 重启）' });
+          if (!agent) {
+            const task = store.get(id);
+            if (!task) return json(res, 404, { error: '任务不存在' });
+            return json(res, 409, {
+              error:
+                task.status === 'running'
+                  ? '任务的监控连接已中断（executor 失联），无法发送信号'
+                  : `任务已${task.status}，无需终止`,
+            });
+          }
           send(agent.ws, { cmd: { kind: 'kill', signal: (body.signal as 'SIGINT') ?? 'SIGINT' } });
           return json(res, 200, { ok: true });
         }
@@ -219,6 +228,18 @@ export async function serve(): Promise<void> {
         if (set) {
           set.delete(conn);
           if (set.size === 0) byTask.delete(conn.taskId);
+        }
+        // agent（executor）失联但任务仍 running：监控中断，标记 error 并广播
+        // （子进程可能成为孤儿，孤儿回收后续版本处理）
+        if (conn.role === 'agent') {
+          const task = store.get(conn.taskId);
+          if (task && task.status === 'running') {
+            task.status = 'error';
+            store.updateStatus(conn.taskId, 'error', null, Date.now());
+            broadcast(conn.taskId, {
+              event: { type: 'status', seq: ++task.seq, ts: Date.now(), dt: 0, status: 'error', exitCode: null },
+            });
+          }
         }
       }
     });
