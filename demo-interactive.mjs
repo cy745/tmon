@@ -41,8 +41,11 @@ function askSecret(question) {
           return;
         }
         if (ch === '' || ch === '\b') {
-          pwd = pwd.slice(0, -1);
-          stdout.write('\b \b');
+          // 仅当已有输入时才擦除（避免擦掉提示文字）
+          if (pwd.length > 0) {
+            pwd = pwd.slice(0, -1);
+            stdout.write('\b \b');
+          }
         } else if (ch !== '') {
           pwd += ch;
           stdout.write('*');
