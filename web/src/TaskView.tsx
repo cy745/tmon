@@ -20,7 +20,7 @@ export default function TaskView({ taskId }: { taskId: string }) {
   const [task, setTask] = useState<TaskMeta | null>(null);
   const [pct, setPct] = useState<number | null>(null);
   const [stage, setStage] = useState<string | null>(null);
-  const [wsState, setWsState] = useState<'connecting' | 'open' | 'closed'>('connecting');
+  const [wsState, setWsState] = useState<'idle' | 'connecting' | 'open' | 'closed'>('connecting');
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [actionOk, setActionOk] = useState<string | null>(null);
 
@@ -104,8 +104,11 @@ export default function TaskView({ taskId }: { taskId: string }) {
           if (closed) return;
           onEvent(ev);
         }
-        // 已结束的任务（非 running）不再连 WS
-        if (meta.status !== 'running') return;
+        // 已结束的任务（非 running）不再连 WS：历史回放模式
+        if (meta.status !== 'running') {
+          setWsState('idle');
+          return;
+        }
         const connect = () => {
           if (closed) return;
           setWsState('connecting');
@@ -122,7 +125,8 @@ export default function TaskView({ taskId }: { taskId: string }) {
         };
         connect();
       } catch {
-        /* 任务不存在等 */
+        // 任务不存在等：不显示连接状态
+        setWsState('idle');
       }
     };
     void init();
@@ -198,7 +202,7 @@ export default function TaskView({ taskId }: { taskId: string }) {
 
       <div className="term-toolbar">
         <span className={`ws-ind ws-${wsState}`}>
-          {wsState === 'open' ? '实时连接' : wsState === 'connecting' ? '连接中…' : '已断开，重连中…'}
+          {wsState === 'open' ? '实时连接' : wsState === 'connecting' ? '连接中…' : wsState === 'idle' ? '历史回放（任务已结束）' : '已断开，重连中…'}
         </span>
         <span className="toolbar-spacer" />
         {actionErr && <span className="action-err">✗ {actionErr}</span>}
