@@ -126,13 +126,12 @@ tmon serve                          # 手动前台启动 server（默认由 CLI 
 
 skill 文件交付位置：仓库 `skills/tmon/SKILL.md`（可发布到 skill 市场）。
 
-## 11. Web 前端（待确认技术栈）
+## 11. Web 前端（✅ 已定并实现，2026-08-03）
 
-页面：
-1. **任务列表** `/`：id、命令摘要、状态徽章、时长、输出行数、间隔热力图缩略
-2. **任务详情** `/task/:id`：xterm.js 终端视图（完整原始流）+ 控制条（Ctrl-C / 强制终止 / 暂停滚动）+ **间隔可视化**（每 chunk 左侧时间戳 + 间隔柱状热力条，最长静默段高亮）+ 进度条/阶段条（v0.3）
-
-实现选型（待确认）：React + Vite + xterm.js（生态成熟、组件化） vs 零构建 vanilla JS + xterm.js（单 HTML 文件内嵌 server，最简部署）。
+- **技术栈（D4）**：React + Vite + xterm.js
+- **布局**：左右分栏任务工作台——左侧任务侧边栏（常驻全景）+ 右侧四段式工作台（任务头 / 进度区 / 间隔时间线 / 终端窗口）
+- **风格**：极简主义（Minimalism & Swiss Style）——近黑单色 + 唯一强调绿、无圆角无阴影、色点式徽章、JetBrains Mono + IBM Plex Sans
+- 详细设计见 **`04-web-design.md`**（v1.0，已实现验收）
 
 ## 12. 安全
 

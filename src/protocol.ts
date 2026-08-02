@@ -14,6 +14,9 @@ export interface TaskMeta {
   endedAt: number | null;
   /** 已发出的最后 seq（历史续传游标） */
   seq: number;
+  /** 最近一次脚本上报的进度（progress/stage 事件），供侧边栏/详情实时展示 */
+  latestPct?: number | null;
+  latestStage?: string | null;
 }
 
 export type TaskEvent =

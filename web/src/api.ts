@@ -13,6 +13,8 @@ export interface TaskMeta {
   startedAt: number;
   endedAt: number | null;
   seq: number;
+  latestPct?: number | null;
+  latestStage?: string | null;
 }
 
 export type TaskEvent =
