@@ -1,6 +1,6 @@
-# tmon 详细设计 v0.1（草案）
+# tmon 详细设计 v0.2（草案）
 
-> 日期：2026-08-02 ｜ 状态：草案，含「待确认」标记的决策点需与用户讨论后定稿
+> 日期：2026-08-02（v0.2：2026-08-03 同步「放弃 hook 强制层，改 skill 指引」决策，见 §10）
 > 上游文档：`01-requirements.md`（需求）、`02-research-report.md`（调研）
 
 ---
@@ -11,7 +11,7 @@
 
 | 模块 | 职责 | 技术 |
 |---|---|---|
-| `cli` | 命令面（run/ls/status/show/wait/kill/progress/serve/install-hook） | Node CLI（自写解析，零框架依赖） |
+| `cli` | 命令面（run/ls/status/show/wait/kill/progress/serve） | Node CLI（自写解析，零框架依赖） |
 | `executor` | 创建 PTY/管道子进程、tee 输出、时间戳、信号控制（单进程内联，无独立 daemon） | node-pty |
 | `server` | 任务注册表、WS 事件流、REST 查询、IPC 端点、JSONL 落盘 | Node http + ws（无框架） |
 | `web` | 任务列表 + 终端视图 + 间隔可视化 + 控制 | 见 §11（待确认） |
@@ -34,7 +34,6 @@ tmon kill <id> [--signal SIGINT|SIGTERM|SIGKILL]   # CLI 侧取消（Web 按钮�
 tmon progress <pct> <msg>           # 脚本内进度上报（读 TMON_ENDPOINT/TMON_TOKEN 环境变量）
 tmon stage <name>                   # 阶段上报
 tmon serve                          # 手动前台启动 server（默认由 CLI 自动拉起，见 §6）
-tmon install-hook                   # 安装 Claude Code PreToolUse hook 强制层（可选，见 §10）
 ```
 
 **任务状态机**：`created → running → success | failed | killed | error`（error = tmon 自身故障，如 server 失联）
@@ -111,20 +110,21 @@ tmon install-hook                   # 安装 Claude Code PreToolUse hook 强制�
 - **调用形式（待确认）**：CLI 子命令 `tmon progress 45 "解压中"`（bash/python/node 脚本直接调用，零 SDK 依赖）→ 可选薄 SDK 包装（`pip install tmon` / `npm i tmon` 提供同名函数，纯语法糖）。
 - **Web 渲染**：progress/stage 事件驱动阶段步骤条 + 百分比进度条（P2，v0.3 实现；协议先行）。
 
-## 10. hook 强制层（FR-1b，可选功能）
+## 10. Agent 引导方式（已定：skill 指引，2026-08-03 取消 hook 强制层）
 
-`tmon install-hook` 写入 `~/.claude/settings.json`：
+**决策**：放弃 Claude Code PreToolUse hook 强制包装方案（原 FR-1b）。调研确认 hook 技术上可行（`updatedInput` 重写 / exit 2 阻断），但：① hook 无流式输出（实时通道仍是 wrapper 本身，hook 只做包装没有额外价值）；② 存在边界限制（headless/-p 竞态、`allowedTools:['*']` 跳过、MCP 工具不强制 deny）；③ 强制手段有副作用（误包装、递归风险）。
 
-```json
-{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"tmon hook-intercept","timeout":30}]}]}}
-```
+**替代方案：skill 指引（FR-1d）**——随项目交付 skill 文件，指导 Agent 主动使用 tmon。要点：
 
-`tmon hook-intercept` 逻辑（读 stdin JSON → 写 stdout JSON）：
-1. 命令已是 `tmon` 开头（查询/进度类）→ 不改（防递归）
-2. 其他全部 → `updatedInput.command` 重写为 `tmon "原命令"`（字符串化，保留 timeout 等字段原样）
-3. 输出格式：`{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{...}}}`
+1. **触发场景**：长任务（下载/编译/批量处理）、后台任务、需要用户实时监控或可干预的命令
+2. **使用模式**：
+   - `tmon "cmd"` 前台执行（透明，输出原样回传）
+   - 需要后台时用 bash `&` / run_in_background，从 stderr 取任务 id 或 `tmon last`
+   - 轮询 `tmon status <id>` 或阻塞 `tmon wait <id>`（透传退出码）
+   - 脚本内 `tmon progress <pct> <msg>` / `tmon stage <name>` 上报进度
+3. **注意事项**：不包装 tmon 自身命令；复杂命令用字符串形式（`tmon "cmd"`）避免引号二义性；命令输出含 ANSI 属正常（Web 端显示完整流）
 
-已知边界（02 报告 O1，冒烟测试矩阵验证）：headless/-p 竞态、`allowedTools:['*']` 跳过、MCP 工具不强制 deny。hook 层可随时 `tmon uninstall-hook` 移除。
+skill 文件交付位置：仓库 `skills/tmon/SKILL.md`（可发布到 skill 市场）。
 
 ## 11. Web 前端（待确认技术栈）
 
@@ -145,10 +145,10 @@ tmon install-hook                   # 安装 Claude Code PreToolUse hook 强制�
 
 | 里程碑 | 本文档覆盖范围 |
 |---|---|
-| v0.1 MVP | §1-§8、§12（无进度 API、无 hook 层实现，协议已定） |
-| v0.2 | §7 PTY 全交互 + Web 输入、§8 净化、FR-1c（ls/status/show/wait/last 已含）、§10 hook 层 |
-| v0.3 | §9 进度 IPC + Web 进度渲染 |
-| v1.0 | §11 历史回放、多任务、跨机部署 |
+| v0.1 MVP | §1-§8、§12（✅ 已完成：含 FR-1c 查询与 §9 进度 API 提前实现，2026-08-02/03） |
+| v0.2 | §7 PTY 全交互 + Web 输入、§8 净化、skill 指引文件（§10）、静默告警（FR-6） |
+| v0.3 | 自动化测试、输出体积控制、历史回放动画、通知（FR-13） |
+| v1.0 | 发布打包、跨机部署（TLS） |
 
 ## 14. 待确认决策清单
 
@@ -160,3 +160,4 @@ tmon install-hook                   # 安装 Claude Code PreToolUse hook 强制�
 | D4 | 前端技术栈 | ✅ 已定：React + Vite + xterm.js（2026-08-02 确认） |
 | D5 | 任务 id 长度 | 8 位 hex（Agent 引用友好） |
 | D6 | 取消升级间隔 | SIGINT→5s→SIGTERM→5s→SIGKILL |
+| D7 | Agent 引导方式 | ✅ 已定：skill 指引，放弃 hook 强制层（2026-08-03 确认，见 §10） |

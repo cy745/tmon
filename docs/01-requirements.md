@@ -1,8 +1,8 @@
 # tmon —— AI Agent 命令执行追踪与监控工具 需求文档
 
-> 曾用名：tmon（因 npm / PyPI / crates.io 三注册表均被占用而弃用，2026-08-02 定名 tmon，terminal monitor）
+> 曾用名：tck（因 npm / PyPI / crates.io 三注册表均被占用而弃用，2026-08-02 定名 tmon，terminal monitor）
 
-> 状态：v0.2（2026-08-02）——已回填调研结论（详见 `02-research-report.md`），全部 ⚠️ 条目已消解；标注「待实测」的条目为刻意保留的验证项。
+> 状态：v0.3（2026-08-03）——v0.2 已回填调研结论；本次更新：放弃 hook 强制层、改为 skill 指引（Q1/FR-1b），并同步 v0.1 MVP 实现进度。
 
 ---
 
@@ -44,10 +44,8 @@ AI Agent 经常需要执行耗时极长的任务（大文件下载、编译、�
                     └───────▲───────────────────────▲─────────────┘
                             │ 事件：行输出+时间戳     │ 控制：kill / stdin
     Agent Bash 工具         │                       │
-        │  hook 强制层       │                       │
-        │  (PreToolUse      │                       │
-        │   updatedInput    │                       │
-        │   重写为 tmon 调用) │                       │
+        │  skill 指引        │                       │
+        │  (tmon "cmd")     │                       │
         ▼                   │                       │
   ┌─────────────┐   ┌───────┴──────────┐    ┌────────┴─────────┐
   │ tmon CLI      │──▶│ 输出拦截器        │──▶│ Web 前端          │
@@ -65,7 +63,7 @@ AI Agent 经常需要执行耗时极长的任务（大文件下载、编译、�
 2. **tmon server（Web 后端）**：任务注册表、实时事件推送、控制通道（取消、输入转发）、脚本进度 API 的 IPC 端点。设计借鉴 asciinema 的「生产者-CLI → 服务器继电器 → 消费者播放器」模型（服务器端终端模拟器维护完整流状态）。
 3. **tmon Web 前端**：任务列表页 + 实时终端视图（xterm.js，可评估直接复用 asciinema-player）+ 行间隔可视化 + 控制按钮。
 
-**进程模型（已定）**：wrapper 与 server 分离。wrapper 启动时向 server 注册任务并建立事件通道；`tmon "cmd" &` 后台执行时子进程由 server / 独立 daemon 托管（孤儿回收），Agent 侧不等待。hook 强制层为可开关功能（边界情况见 §8-Q1）。
+**进程模型（已定）**：wrapper 与 server 分离。wrapper 启动时向 server 注册任务并建立事件通道；`tmon "cmd" &` 后台执行时子进程由 server / 独立 daemon 托管（孤儿回收），Agent 侧不等待。Agent 侧引导采用 **skill 指引**（2026-08-03 决策，见 Q1）。
 
 ## 5. 用户场景
 
@@ -85,7 +83,8 @@ AI Agent 经常需要执行耗时极长的任务（大文件下载、编译、�
 ### P0（MVP：必须）
 - **FR-1 CLI 封装**：`tmon "curl xxx"` 形式，也可支持 `tmon curl xxx`（字符串化命令，避免 shell 解析二义性）；支持环境变量透传、工作目录指定。
 - **FR-2 透明输出**：子进程 stdout/stderr 原样回流到 Agent 侧（含合并顺序语义）；退出码透传；`tmon` 自身报错（如命令不存在）与命令报错可区分。
-- **FR-1b 强制层（P1，Claude Code 可选）**：PreToolUse hook 用 `updatedInput` 在命令执行前把裸命令重写为 wrapper 调用；exit 2 / `permissionDecision: deny` 可完全阻断。注意：hook 看不到流式输出（实时通道仍是 wrapper 本身）；边界情况：headless/-p 模式异步竞态、`allowedTools: ['*']` 跳过 hook、MCP 工具不强制 deny —— 需冒烟测试矩阵（02 报告 O1）。
+- ~~FR-1b 强制层~~ **已取消（2026-08-03 决策）**：原计划用 Claude Code PreToolUse hook 强制包装命令，决定放弃强制手段，改为 **skill 指引**——提供 tmon skill 文件，指导 Agent 在长任务/后台任务场景主动使用 tmon。理由：hook 存在边界限制（headless 竞态、`allowedTools: ['*']` 跳过）且强制有副作用；skill 指引温和、跨框架、零维护成本。
+- **FR-1d skill 指引（P1，替代 FR-1b）**：随项目交付 `tmon` skill 文件（SKILL.md），内容含：触发场景（长任务/后台任务/需要用户实时监控的命令）、使用模式（`tmon "cmd"` 前台执行、`tmon wait/status` 查询结果、`tmon progress/stage` 进度上报）、注意事项（不包装 tmon 自身命令、复杂命令用字符串形式）。
 - **FR-1c Agent 侧状态查询（P1）**：CLI 子命令让 Agent 不依赖 Web 也能获取任务状态与结果（查询式，与 Web 端实时流互补）：
   - `tmon ls` —— 任务列表（id、命令摘要、状态、开始时间、时长、输出行数）
   - `tmon status <id>` —— 单任务状态（running / success / failed / killed）+ 退出码，Agent 轮询循环专用
@@ -126,7 +125,7 @@ AI Agent 经常需要执行耗时极长的任务（大文件下载、编译、�
 
 | 编号 | 问题 | 初步判断 |
 |---|---|---|
-| Q1 | 强制 Agent 使用 tmon 的方式：skill 指引 vs Claude Code PreToolUse hook 强制包装？ | **[已验证]** PreToolUse 可拦截 + `updatedInput` 重写命令 + exit 2/deny 可取消；但 hook 无流式输出（PostToolUse 事后、MessageDisplay 仅展示）→ **hook = 强制层，wrapper = 实时主通道**。边界：headless 竞态、`allowedTools:['*']` 跳过、MCP 不强制 deny（O1） |
+| Q1 | Agent 使用 tmon 的引导方式 | ✅ **已定（2026-08-03）：skill 指引，放弃 hook 强制**。调研确认 hook 可强制包装（`updatedInput` 重写）但无流式输出（wrapper 仍是实时主通道）、存在边界限制（headless 竞态等）；skill 指引 Agent 在长任务场景主动使用，温和且跨框架 |
 | Q2 | **Agent 是否有能力处理终端阻塞等待输入的情况？**（决定全可交互终端代理的必要性） | 维持初步判断（Agent 大概率无法注入 stdin，交互命令挂起至超时），**降级为待实测**（O2）：调研未找到直接证据链；但后台任务无可见性的缺陷已确凿（issue #61568）→ 监控+取消价值获验证，PTY 全交互维持 P1 |
 | Q3 | `tmon "cmd" &` 后台执行时，server 如何接管控件生命周期？ | **已定**：wrapper 与 server 分离，后台任务由 server/daemon 托管并回收孤儿进程 |
 | Q4 | 输出体积控制 | 行数/字节上限、滚动窗口、日志轮转策略 |
@@ -144,17 +143,17 @@ AI Agent 经常需要执行耗时极长的任务（大文件下载、编译、�
 | 编码问题（GBK） | 中 | NFR-7 统一方案 |
 | 输出量与 Web 端渲染性能 | 中 | 虚拟滚动 + 窗口化存储 |
 | 安全边界 | 高 | 127.0.0.1 + token + 文档化跨机部署 |
-| hook 强制层边界情况（headless 竞态 / allowedTools 跳过 / MCP 不强制 deny） | 中 | O1 冒烟测试矩阵；hook 层做成可开关可降级 |
 | 命名冲突 | 已解决 | crates.io 同领域硬冲突 → 必须改名，定名前全注册表复验 |
+| skill 指引未被 Agent 遵守（无强制手段） | 中 | skill 文档覆盖高频场景；长期可评估监控统计（tmon 使用率） |
 
 ## 10. 路线图（调研后定稿）
 
 **技术选型（已定）**：Node.js/TypeScript + node-pty（PTY 层，微软维护，ConPTY/forkpty 跨平台）+ WebSocket 实时流 + xterm.js 终端渲染（可评估直接复用 asciinema-player）；server 借鉴 asciinema relay + 服务器端终端模拟器模型。**命名**：已定名 `tmon`（原构想名 tck 因三注册表冲突弃用，2026-08-02 确认；候选筛查过程见 §8-Q6）。
 
-- **v0.1 MVP**：wrapper（纯管道版）+ 行时间戳 + Web 实时查看（间隔可视化）+ Ctrl-C 取消 + hook 强制层冒烟测试（O1）；Linux 优先。
-- **v0.2**：Windows/macOS（node-pty 天然跨平台）；PTY 全终端交互 + Web 输入（FR-7/FR-8）；Agent 输出净化（FR-9）；**Agent 侧状态查询 CLI（FR-1c）**；**交互输入实测（O2）**。
-- **v0.3**：脚本进度 API（FR-10）；静默告警（FR-6）。
-- **v1.0**：多任务、历史回放、部署文档（跨机 + TLS）。
+- **v0.1 MVP（✅ 已完成，2026-08-02/03）**：wrapper（PTY）+ 行时间戳 + Web 实时查看（间隔可视化）+ Ctrl-C 取消 + Agent 侧查询（FR-1c）+ 进度 API（FR-10 提前）；Windows 实测通过。
+- **v0.2**：Linux/macOS 实测（forkpty 分支）；Agent 输出净化（FR-9）；**skill 指引文件（FR-1d）**；**交互输入实测（O2）**；静默告警（FR-6）。
+- **v0.3**：自动化测试；输出体积控制；历史回放动画；通知（FR-13）。
+- **v1.0**：发布打包（npm publish + web dist 构建验证）；部署文档（跨机 + TLS）。
 
 ## 11. 验收标准（草稿）
 
@@ -166,7 +165,10 @@ AI Agent 经常需要执行耗时极长的任务（大文件下载、编译、�
 
 ## 12. 下一步
 
-1. ✅ 全网调研完成（2026-08-02，报告见 `02-research-report.md`）。
-2. ✅ 定名 `tmon`（发布前仍需在 npm / PyPI / crates.io / GitHub 全注册表复验一遍，以防定名后被抢注）。
-3. 编写详细设计文档（事件协议、JSONL 落盘格式、hook 强制层设计、IPC 进度 API 规范）。
-4. 实现 v0.1 MVP。
+1. ✅ 调研 / 定名 / 需求 v0.2 / 详细设计 / v0.1 MVP 实现与验证（2026-08-02/03）。
+2. ✅ 决策：放弃 hook 强制层，改 skill 指引（2026-08-03）。
+3. 制作 skill 文件（FR-1d：指引 Agent 在长任务/后台任务场景主动使用 tmon）。
+4. Linux 实测（forkpty 分支、`/bin/sh`、GBK 编码）。
+5. 自动化测试（vitest：协议/executor/server 核心逻辑 + e2e 脚本）。
+6. Agent 侧输出净化（FR-9）与静默告警（FR-6）。
+7. 发布打包（npm publish、Node 版本策略、web dist 构建验证）。

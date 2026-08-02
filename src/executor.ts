@@ -44,6 +44,7 @@ export function runTask(opts: ExecutorOptions): Promise<ExecutorResult> {
     let finished = false;
     let pendingKill: 'SIGINT' | 'SIGKILL' | null = null;
     let upgradeTimer: NodeJS.Timeout | null = null;
+    let stdinBridge: (chunk: Buffer) => void = () => {};
 
     function emit(ev: EventBody): void {
       const now = process.hrtime.bigint();
@@ -63,6 +64,13 @@ export function runTask(opts: ExecutorOptions): Promise<ExecutorResult> {
       if (finished) return;
       finished = true;
       if (upgradeTimer) clearTimeout(upgradeTimer);
+      // 恢复宿主终端状态（若启用了 stdin 转发）
+      try {
+        if (process.stdin.isTTY) {
+          process.stdin.setRawMode(false);
+          process.stdin.off('data', stdinBridge);
+        }
+      } catch { /* ignore */ }
       try { sendStatus(status, exitCode); } catch { /* server 已断 */ }
       // 等待事件 flush 后关闭
       setTimeout(() => {
@@ -190,6 +198,17 @@ export function runTask(opts: ExecutorOptions): Promise<ExecutorResult> {
         // ② 上报 server（Web 端完整流）
         emit({ type: 'output', stream: 'stdout', data: cleaned });
       });
+      // ③ 宿主 stdin 是 TTY（人类用户在前台终端运行 tmon）时：本机键盘转发到 PTY，
+      //    与 Web 端输入并行可用；Agent 场景 stdin 非 TTY，自动不转发（不干扰 Agent）
+      if (process.stdin.isTTY) {
+        try {
+          process.stdin.setRawMode(true);
+        } catch { /* ignore */ }
+        stdinBridge = (chunk) => {
+          if (!finished) pty?.write(chunk.toString());
+        };
+        process.stdin.on('data', stdinBridge);
+      }
       pty.onExit(({ exitCode, signal }) => {
         // Windows 无信号概念：Ctrl-C 表现为 STATUS_CONTROL_C_EXIT (0xC000013A)
         const ctrlC = WIN && (exitCode ?? 0) >>> 0 === 0xc000013a;

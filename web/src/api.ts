@@ -59,6 +59,14 @@ export async function postInput(id: string, data: string): Promise<void> {
   });
 }
 
+export async function postResize(id: string, cols: number, rows: number): Promise<void> {
+  await fetch(`/api/tasks/${id}/resize`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cols, rows }),
+  });
+}
+
 /** 订阅任务实时事件流（含历史续传回放） */
 export function connectWs(
   id: string,
