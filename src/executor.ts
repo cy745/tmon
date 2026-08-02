@@ -88,6 +88,17 @@ export function runTask(opts: ExecutorOptions): Promise<ExecutorResult> {
       }, 120);
     }
 
+    function killGroup(signal: 'SIGINT' | 'SIGKILL'): void {
+      // POSIX：向整个前台进程组发信号（forkpty 子进程是会话 leader，-pid 即 pgid）。
+      // 只杀直接子进程（sh）会因 sh 延迟处理 SIGINT 而无法终止孙进程（issue #1）
+      if (!pty) return;
+      try {
+        process.kill(-pty.pid, signal);
+      } catch {
+        try { pty.kill(signal); } catch { /* ignore */ }
+      }
+    }
+
     function escalateKill(): void {
       if (upgradeTimer) clearTimeout(upgradeTimer);
       pendingKill = 'SIGKILL';
@@ -96,7 +107,7 @@ export function runTask(opts: ExecutorOptions): Promise<ExecutorResult> {
         // ConPTY 无信号语义：进程树强杀
         exec(`taskkill /PID ${pty.pid} /T /F`, () => { /* ignore */ });
       } else {
-        try { pty.kill('SIGKILL'); } catch { /* ignore */ }
+        killGroup('SIGKILL');
       }
     }
 
@@ -121,7 +132,7 @@ export function runTask(opts: ExecutorOptions): Promise<ExecutorResult> {
         // ConPTY 写入 \x03 等价真实 Ctrl-C：程序可捕获并优雅退出
         try { pty.write('\x03'); } catch { /* ignore */ }
       } else {
-        try { pty.kill('SIGINT'); } catch { /* ignore */ }
+        killGroup('SIGINT');
       }
       upgradeTimer = setTimeout(() => escalateKill(), 5000); // D6：5s 未退升级
     }
