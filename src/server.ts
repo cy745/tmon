@@ -1,0 +1,320 @@
+// tmon server（docs/03-design.md §6/§12）：
+//  - HTTP REST：健康检查 / 任务查询 / 历史事件 / 控制指令（kill/input/resize）/ 进度上报
+//  - WebSocket：事件广播（agent 生产者 ↔ web 消费者），历史续传
+//  - 安全：仅监听 127.0.0.1；非本机 Host 请求必须 Bearer token（MVP 取舍，见 03-design.md §12）
+//  - 静态托管：web/dist 存在时直接提供前端
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { WebSocketServer, WebSocket } from 'ws';
+import type { TaskEvent, TaskMeta, TaskStatus, WsClientMsg, WsServerMsg } from './protocol.ts';
+import { Store } from './store.ts';
+import { DEFAULT_PORT, ensureDirs, portFile, tokenFile } from './paths.ts';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+interface ClientConn {
+  ws: WebSocket;
+  role: 'agent' | 'web' | 'progress';
+  taskId: string;
+}
+
+export async function serve(): Promise<void> {
+  ensureDirs();
+  const token = await ensureToken();
+  const port = await findFreePort();
+  fs.writeFileSync(portFile(), String(port));
+  console.error(`tmon server: http://127.0.0.1:${port} (token 模式)`);
+
+  const store = new Store();
+  store.loadExisting();
+
+  const clients = new Set<ClientConn>();
+  const byTask = new Map<string, Set<ClientConn>>();
+
+  function broadcast(taskId: string, msg: WsServerMsg, except?: ClientConn): void {
+    const set = byTask.get(taskId);
+    if (!set) return;
+    const raw = JSON.stringify(msg);
+    for (const conn of set) {
+      if (conn === except) continue;
+      if (conn.ws.readyState === WebSocket.OPEN) conn.ws.send(raw);
+    }
+  }
+
+  function agentOf(taskId: string): ClientConn | undefined {
+    const set = byTask.get(taskId);
+    return set ? [...set].find((c) => c.role === 'agent') : undefined;
+  }
+
+  function onClientEvent(conn: ClientConn, ev: TaskEvent): void {
+    store.appendEvent(conn.taskId, ev);
+    if (ev.type === 'status') {
+      store.updateStatus(conn.taskId, ev.status, ev.exitCode, ev.ts);
+      const meta = store.get(conn.taskId);
+      if (meta) {
+        // 通知所有客户端刷新列表状态
+        broadcast(conn.taskId, { event: ev }, conn);
+      }
+      return;
+    }
+    broadcast(conn.taskId, { event: ev }, conn);
+  }
+
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+    const method = req.method ?? 'GET';
+    const p = url.pathname;
+    try {
+      // 静态资源（web/dist）
+      if (method === 'GET' && (p === '/' || p.startsWith('/assets/') || p === '/favicon.svg')) {
+        if (serveStatic(p, res)) return;
+      }
+      if (p === '/api/health' && method === 'GET') {
+        return json(res, 200, { ok: true, version: '0.1.0' });
+      }
+      if (p === '/api/tasks' && method === 'GET') {
+        return json(res, 200, { tasks: store.all() });
+      }
+      let m = p.match(/^\/api\/tasks\/([0-9a-f]{8})$/);
+      if (m && method === 'GET') {
+        const task = store.get(m[1]);
+        return task ? json(res, 200, { task }) : json(res, 404, { error: 'task not found' });
+      }
+      m = p.match(/^\/api\/tasks\/([0-9a-f]{8})\/events$/);
+      if (m && method === 'GET') {
+        const after = Number(url.searchParams.get('after') ?? 0);
+        return json(res, 200, { events: store.readEventsAfter(m[1], after) });
+      }
+      m = p.match(/^\/api\/tasks\/([0-9a-f]{8})\/(kill|input|resize|progress)$/);
+      if (m && method === 'POST') {
+        const [, id, action] = m;
+        const body = (await readBody(req)) as Record<string, unknown>;
+        if (action === 'kill') {
+          const agent = agentOf(id);
+          if (!agent) {
+            const task = store.get(id);
+            if (!task) return json(res, 404, { error: '任务不存在' });
+            return json(res, 409, {
+              error:
+                task.status === 'running'
+                  ? '任务的监控连接已中断（executor 失联），无法发送信号'
+                  : `任务已${task.status}，无需终止`,
+            });
+          }
+          send(agent.ws, { cmd: { kind: 'kill', signal: (body.signal as 'SIGINT') ?? 'SIGINT' } });
+          return json(res, 200, { ok: true });
+        }
+        if (action === 'input') {
+          const agent = agentOf(id);
+          if (!agent) return json(res, 409, { error: '任务无 agent 连接' });
+          send(agent.ws, { cmd: { kind: 'input', data: String(body.data ?? '') } });
+          return json(res, 200, { ok: true });
+        }
+        if (action === 'resize') {
+          const agent = agentOf(id);
+          if (!agent) return json(res, 409, { error: '任务无 agent 连接' });
+          send(agent.ws, {
+            cmd: { kind: 'resize', cols: Number(body.cols ?? 120), rows: Number(body.rows ?? 30) },
+          });
+          return json(res, 200, { ok: true });
+        }
+        // progress：生成带 seq/ts/dt 的进度事件（server 单进程内 dt 自洽）
+        const task = store.get(id);
+        if (!task) return json(res, 404, { error: 'task not found' });
+        const now = Date.now();
+        const pct = Number(body.pct);
+        const ev: TaskEvent = Number.isFinite(pct)
+          ? { type: 'progress', seq: ++task.seq, ts: now, dt: 0, pct, msg: body.msg ? String(body.msg) : undefined }
+          : { type: 'stage', seq: ++task.seq, ts: now, dt: 0, name: String(body.stage ?? '') };
+        onClientEvent({ ws: null as never, role: 'progress', taskId: id }, ev);
+        return json(res, 200, { ok: true });
+      }
+      return json(res, 404, { error: 'not found' });
+    } catch (err) {
+      return json(res, 500, { error: String(err) });
+    }
+  });
+
+  const wss = new WebSocketServer({ server });
+
+  wss.on('connection', (ws, req) => {
+    const host = (req.headers.host ?? '').split(':')[0];
+    const isLocal = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+    const auth = req.headers.authorization ?? '';
+    if (!isLocal && auth !== `Bearer ${token}`) {
+      ws.close(4401, 'unauthorized');
+      return;
+    }
+    let conn: ClientConn | null = null;
+    ws.on('message', (raw) => {
+      let msg: WsClientMsg;
+      try {
+        msg = JSON.parse(raw.toString()) as WsClientMsg;
+      } catch {
+        return;
+      }
+      if (!('hello' in msg)) {
+        // 非 hello 消息：事件（agent/progress 生产）或未注册即发消息
+        if (conn && 'event' in msg) {
+          onClientEvent(conn, msg.event);
+        } else {
+          ws.close(4400, 'bad message');
+        }
+        return;
+      }
+      const hello = msg.hello;
+      if (typeof hello.token !== 'string') {
+        ws.close(4400, 'bad hello');
+        return;
+      }
+      // web 角色（浏览器）经本机 Host 校验放行，免 token；agent/progress 必须带 token
+      if (hello.role !== 'web' && hello.token !== token) {
+        ws.close(4401, 'unauthorized');
+        return;
+      }
+      if (hello.role === 'agent') {
+        const meta: TaskMeta = {
+          id: hello.taskId,
+          cmd: hello.meta?.cmd ?? '',
+          cwd: hello.meta?.cwd ?? process.cwd(),
+          pid: hello.meta?.pid ?? 0,
+          mode: hello.meta?.mode ?? 'pty',
+          status: 'running',
+          exitCode: null,
+          startedAt: Date.now(),
+          endedAt: null,
+          seq: 0,
+        };
+        if (store.get(hello.taskId)) {
+          ws.close(4403, 'task already registered');
+          return;
+        }
+        store.create(meta);
+        conn = { ws, role: 'agent', taskId: hello.taskId };
+        clients.add(conn);
+        byTask.set(hello.taskId, (byTask.get(hello.taskId) ?? new Set()).add(conn));
+        send(ws, { welcome: { task: meta, replayed: [] } });
+        return;
+      }
+      if (hello.role === 'web') {
+        const task = store.get(hello.taskId);
+        if (!task) {
+          ws.close(4404, 'task not found');
+          return;
+        }
+        // 历史续传（REST 之后连上 WebSocket 的事件经此处回放，避免丢事件）
+        const replayed = store.readEventsAfter(hello.taskId, hello.lastSeq ?? 0);
+        conn = { ws, role: 'web', taskId: hello.taskId };
+        clients.add(conn);
+        byTask.set(hello.taskId, (byTask.get(hello.taskId) ?? new Set()).add(conn));
+        send(ws, { welcome: { task, replayed } });
+        return;
+      }
+      if (hello.role === 'progress') {
+        conn = { ws, role: 'progress', taskId: hello.taskId };
+        clients.add(conn);
+        byTask.set(hello.taskId, (byTask.get(hello.taskId) ?? new Set()).add(conn));
+        send(ws, { welcome: { task: store.get(hello.taskId) ?? ({} as TaskMeta), replayed: [] } });
+        return;
+      }
+    });
+    ws.on('close', () => {
+      if (conn) {
+        clients.delete(conn);
+        const set = byTask.get(conn.taskId);
+        if (set) {
+          set.delete(conn);
+          if (set.size === 0) byTask.delete(conn.taskId);
+        }
+        // agent（executor）失联但任务仍 running：监控中断，标记 error 并广播
+        // （子进程可能成为孤儿，孤儿回收后续版本处理）
+        if (conn.role === 'agent') {
+          const task = store.get(conn.taskId);
+          if (task && task.status === 'running') {
+            task.status = 'error';
+            store.updateStatus(conn.taskId, 'error', null, Date.now());
+            broadcast(conn.taskId, {
+              event: { type: 'status', seq: ++task.seq, ts: Date.now(), dt: 0, status: 'error', exitCode: null },
+            });
+          }
+        }
+      }
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+}
+
+function send(ws: WebSocket, msg: WsServerMsg): void {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+}
+
+function json(res: http.ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(body));
+}
+
+async function readBody(req: http.IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const c of req) chunks.push(c as Buffer);
+  const text = Buffer.concat(chunks).toString('utf8');
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
+async function ensureToken(): Promise<string> {
+  try {
+    const existing = fs.readFileSync(tokenFile(), 'utf8').trim();
+    if (existing) return existing;
+  } catch {
+    // 首次启动，无 token 文件
+  }
+  const token = crypto.randomBytes(24).toString('base64url');
+  fs.writeFileSync(tokenFile(), token);
+  return token;
+}
+
+async function findFreePort(): Promise<number> {
+  for (let p = DEFAULT_PORT; p < DEFAULT_PORT + 50; p++) {
+    if (await isPortFree(p)) return p;
+  }
+  throw new Error('找不到可用端口');
+}
+
+function isPortFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const srv = http.createServer();
+    srv.once('error', () => resolve(false));
+    srv.listen(port, '127.0.0.1', () => {
+      srv.close(() => resolve(true));
+    });
+  });
+}
+
+function serveStatic(p: string, res: http.ServerResponse): boolean {
+  const root = path.join(__dirname, '..', 'web', 'dist');
+  if (!fs.existsSync(root)) return false;
+  const file = p === '/' ? 'index.html' : p.slice(1);
+  const full = path.join(root, file);
+  if (!full.startsWith(root) || !fs.existsSync(full)) return false;
+  const ext = path.extname(full);
+  const types: Record<string, string> = {
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript',
+    '.css': 'text/css',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.json': 'application/json',
+    '.woff2': 'font/woff2',
+  };
+  res.writeHead(200, { 'content-type': types[ext] ?? 'application/octet-stream' });
+  res.end(fs.readFileSync(full));
+  return true;
+}
