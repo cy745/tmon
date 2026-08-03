@@ -41,6 +41,7 @@ cd web && npm ci && npx tsc --noEmit # Web 端类型检查
 | 类型检查 | `npm run typecheck` + `cd web && npx tsc --noEmit` | 必跑 |
 | Linux e2e | `bash tests/e2e-linux.sh` | 覆盖 sh -c / forkpty / 信号 / 进度 / 交互输入 |
 | 单元测试 | `npx vitest run` | sanitize / store / encoding 等纯逻辑 |
+| 安全测试 | `npm run test:security` | 启动真实 server，模拟恶意 Origin/Host/CSRF 注入/跨域 WS（CSWSH）/web 角色伪造事件，验证本地服务安全边界（tests/security/，与单元测试分目录） |
 
 ## 代码规范
 
