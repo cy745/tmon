@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { TaskEvent, TaskMeta, TaskStatus, WsClientMsg, WsServerMsg } from './protocol.ts';
 import { Store } from './store.ts';
-import { DEFAULT_PORT, ensureDirs, pidFile, portFile, tokenFile } from './paths.ts';
+import { DEFAULT_PORT, ensureDirs, pidFile, portFile, readPort, readToken, tokenFile } from './paths.ts';
 import pkg from '../package.json' with { type: 'json' };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -24,7 +24,23 @@ interface ClientConn {
   taskId: string;
 }
 
-export async function serve(): Promise<http.Server> {
+export async function serve(): Promise<http.Server | null> {
+  // 单例（docs/03-design.md §6）：同一数据目录已有健康 server 时直接复用，不再新建实例。
+  // 防手动 `tmon serve` 与自动拉起并存产生多实例（此前实测出现过 8456/8457 并存，
+  // 后者覆盖 port 文件、前者成孤儿）。
+  const existingPort = await readPort();
+  const existingToken = (await readToken()) ?? '';
+  if (existingPort !== null) {
+    const v = await checkHealth(existingPort, existingToken);
+    if (v !== null) {
+      console.error(
+        v === VERSION
+          ? `tmon server 已在运行: http://127.0.0.1:${existingPort}`
+          : `tmon server 已在运行（旧版本 ${v}），执行任意 tmon 命令将自动替换`,
+      );
+      return null;
+    }
+  }
   ensureDirs();
   const token = await ensureToken();
   const port = await findFreePort();
@@ -316,6 +332,21 @@ function isLocalOrigin(origin: string | undefined): boolean {
     return isLocalHost(new URL(origin).hostname);
   } catch {
     return false;
+  }
+}
+
+/** 探测端口上的 server 是否健康，返回其版本号；不可达/异常返回 null */
+async function checkHealth(port: number, token: string): Promise<string | null> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(800),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { version?: string };
+    return body.version ?? null;
+  } catch {
+    return null;
   }
 }
 

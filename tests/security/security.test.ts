@@ -67,7 +67,7 @@ function wsOpen(opts: { origin?: string } = {}): Promise<{ kind: 'open' | 'close
 beforeAll(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tmon-sec-'));
   process.env.TMON_DATA_DIR = dataDir;
-  server = await serve();
+  server = (await serve())!; // 临时数据目录无已有 server，必返回新实例
   port = Number(fs.readFileSync(path.join(dataDir, 'port'), 'utf8').trim());
   // 起一个后台运行任务（sleep 30），供 web 角色注入测试使用
   // 入口必须用 bin/tmon.js（src/cli.ts 只导出 main 不自调用，直接 node 跑会无输出退出）
