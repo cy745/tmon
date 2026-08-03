@@ -34,6 +34,11 @@ export function tokenFile(): string {
   return path.join(dataDir(), 'token');
 }
 
+/** server 进程 pid 记录：CLI 升级后发现版本不匹配时据此 kill 旧 server */
+export function pidFile(): string {
+  return path.join(dataDir(), 'server.pid');
+}
+
 export function ensureDirs(): void {
   // 数据目录权限收紧（安全审计 R5）：任务输出可能含敏感信息，仅当前用户可读写
   fs.mkdirSync(dataDir(), { recursive: true, mode: 0o700 });

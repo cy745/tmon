@@ -11,9 +11,12 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { TaskEvent, TaskMeta, TaskStatus, WsClientMsg, WsServerMsg } from './protocol.ts';
 import { Store } from './store.ts';
-import { DEFAULT_PORT, ensureDirs, portFile, tokenFile } from './paths.ts';
+import { DEFAULT_PORT, ensureDirs, pidFile, portFile, tokenFile } from './paths.ts';
+import pkg from '../package.json' with { type: 'json' };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/** 版本唯一来源：package.json（health 返回 + discover 版本比对用） */
+export const VERSION = pkg.version;
 
 interface ClientConn {
   ws: WebSocket;
@@ -26,6 +29,8 @@ export async function serve(): Promise<http.Server> {
   const token = await ensureToken();
   const port = await findFreePort();
   fs.writeFileSync(portFile(), String(port), { mode: 0o600 });
+  // 记录进程 pid：CLI 升级后发现版本不匹配时据此 kill 旧 server 完成替换
+  fs.writeFileSync(pidFile(), String(process.pid), { mode: 0o600 });
   console.error(`tmon server: http://127.0.0.1:${port} (token 模式)`);
 
   const store = new Store();
@@ -94,7 +99,7 @@ export async function serve(): Promise<http.Server> {
         if (serveStatic(p, res)) return;
       }
       if (p === '/api/health' && method === 'GET') {
-        return json(res, 200, { ok: true, version: '0.1.0' });
+        return json(res, 200, { ok: true, version: VERSION });
       }
       if (p === '/api/tasks' && method === 'GET') {
         return json(res, 200, { tasks: store.all() });
