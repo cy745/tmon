@@ -110,7 +110,7 @@ tmon serve                          # 手动前台启动 server（默认由 CLI 
 
 - **通道**：TCP `127.0.0.1` 随机端口（跨平台，unix socket 在 Windows 不可用故弃用）+ 每任务独立 token；server 在任务创建时分配，通过环境变量注入子进程：`TMON_ENDPOINT=127.0.0.1:45231`、`TMON_TOKEN=xxxx`。
 - **协议**：JSON lines over TCP：`{"type":"progress","pct":45,"msg":"解压中"}` / `{"type":"stage","name":"下载"}` / `{"type":"log","level":"info","msg":"..."}` / `{"type":"ping"}`。
-- **调用形式（待确认）**：CLI 子命令 `tmon progress 45 "解压中"`（bash/python/node 脚本直接调用，零 SDK 依赖）→ 可选薄 SDK 包装（`pip install tmon` / `npm i tmon` 提供同名函数，纯语法糖）。
+- **调用形式（待确认）**：CLI 子命令 `tmon progress 45 "解压中"`（bash/python/node 脚本直接调用，零 SDK 依赖）→ 可选薄 SDK 包装（`pip install tmon` / `npm i @qiu745/tmon` 提供同名函数，纯语法糖）。
 - **Web 渲染**：progress/stage 事件驱动阶段步骤条 + 百分比进度条（P2，v0.3 实现；协议先行）。
 
 ## 10. Agent 引导方式（已定：skill 指引，2026-08-03 取消 hook 强制层）

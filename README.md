@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/tmon"><img src="https://img.shields.io/npm/v/tmon.svg" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@qiu745/tmon"><img src="https://img.shields.io/npm/v/%40qiu745%2Ftmon.svg" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D22.18-339933.svg" alt="Node >= 22.18">
   <img src="https://img.shields.io/badge/platform-win%20%7C%20linux%20%7C%20macOS-lightgrey.svg" alt="Platforms">
