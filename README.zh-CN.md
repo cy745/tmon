@@ -90,6 +90,16 @@ Agent Bash 工具  →  tmon CLI（PTY 代理）  →  tmon server（事件 + JS
 
 每个输出 chunk 记录墙钟时间戳与单调时钟增量，JSONL 持久化，实时推送到 Web。Web 端用 xterm.js 渲染完整终端（含 ANSI/TUI 输出），间隔时间线按绿→红着色每个输出间隔。
 
+## 安全模型
+
+- 仅监听 `127.0.0.1`。全部 REST 端点校验 Host 头（白名单 `127.0.0.1`/`localhost`/`::1`）与 Origin 头（浏览器请求必须来自本机页面）——DNS rebinding 与 CSRF 一律 403/415 拒绝。
+- WebSocket 握手在 upgrade 阶段校验 Origin（CSWSH 防护，RFC 6455 §10.2）；非本机 agent 必须携带 Bearer token；`web` 角色只读（禁止伪造事件）。
+- 状态变更端点（`kill`/`input`/`resize`/`progress`）强制 `application/json` content-type——form POST 与 text/plain 伪 JSON（绕过 CORS 预检的注入通道）被拒绝。
+- token/port/任务数据文件均为 0600，数据目录 0700（多用户机器上其他用户无法读取任务输出）。
+- 本机浏览器访问 Web **默认免认证**（设计取舍）——能打开你桌面浏览器的人即可查看任务输出；跨机部署（TLS + 用户认证）计划在 v1.0。
+- tmon 是包装器：权限边界 = Agent 的权限，绝不额外提权。
+- **升级**：CLI 通过 `/api/health` 版本握手检测到残留的旧版本 server 时自动替换（pid 文件 + 版本比对），残留旧进程（可能缺少安全修复）不会被复用。
+
 ## 文档
 
 | 文档 | 说明 |
@@ -113,6 +123,8 @@ cp -r skills/tmon ~/.claude/skills/
 ```bash
 npm ci
 npm run typecheck
+npm test
+npm run test:security    # 安全测试（tests/security/，启动真实 server 的攻击模拟）
 bash tests/e2e-linux.sh   # Linux e2e（POSIX 路径、信号语义）
 cd web && npm ci && npx tsc --noEmit
 ```

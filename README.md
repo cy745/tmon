@@ -91,6 +91,16 @@ Agent Bash tool  →  tmon CLI (PTY proxy)  →  tmon server (events + JSONL)
 
 Every output chunk is recorded with a wall-clock timestamp and a monotonic delta, persisted as JSONL, and streamed to the web UI. The web UI renders the full terminal (xterm.js) including ANSI/TUI output, with a timeline strip coloring each interval green→red.
 
+## Security model
+
+- Listens on `127.0.0.1` only. All REST endpoints validate the Host header (allowlist: `127.0.0.1`/`localhost`/`::1`) and the `Origin` header (browser requests must come from a local page) — DNS rebinding and CSRF are rejected with 403/415.
+- WebSocket handshakes validate the Origin at the upgrade stage (CSWSH protection, RFC 6455 §10.2); non-local agents must present the bearer token; the `web` role is read-only (cannot forge events).
+- State-changing endpoints (`kill` / `input` / `resize` / `progress`) require the `application/json` content type — form posts and `text/plain` pseudo-JSON (which bypass CORS preflight) are rejected.
+- Token, port and task data files are `0600`; data directories are `0700` (on multi-user machines, other users cannot read task output).
+- Local browser access to the web UI is **unauthenticated by design** — anyone with access to your desktop browser session can view task output; cross-machine deployment (TLS + user auth) is planned for v1.0.
+- tmon is a wrapper: its permission boundary equals the Agent's — it never elevates privileges.
+- **Upgrading**: the CLI detects a stale (old-version) server via `/api/health` version handshake and replaces it automatically (pid file + version check), so leftover old processes — which may lack security fixes — are never reused.
+
 ## Documentation
 
 | Doc | Description |
@@ -115,6 +125,7 @@ cp -r skills/tmon ~/.claude/skills/
 npm ci
 npm run typecheck
 npm test
+npm run test:security    # security tests (tests/security/, live server attack simulation)
 bash tests/e2e-linux.sh   # Linux/macOS e2e (POSIX paths, signals)
 cd web && npm ci && npx tsc --noEmit
 ```

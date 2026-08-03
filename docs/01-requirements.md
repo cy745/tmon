@@ -150,7 +150,7 @@ AI Agent 经常需要执行耗时极长的任务（大文件下载、编译、�
 
 **技术选型（已定）**：Node.js/TypeScript + node-pty（PTY 层，微软维护，ConPTY/forkpty 跨平台）+ WebSocket 实时流 + xterm.js 终端渲染（可评估直接复用 asciinema-player）；server 借鉴 asciinema relay + 服务器端终端模拟器模型。**命名**：已定名 `tmon`（原构想名 tck 因三注册表冲突弃用，2026-08-02 确认；候选筛查过程见 §8-Q6）。
 
-- **v0.1 MVP（✅ 已完成，2026-08-02/03）**：wrapper（PTY）+ 行时间戳 + Web 实时查看（间隔可视化）+ Ctrl-C 取消 + Agent 侧查询（FR-1c）+ 进度 API（FR-10 提前）+ **Web 端左右分栏工作台与极简风格重构（2026-08-03 验收，见 04-web-design.md）**；Windows 实测通过。
+- **v0.1 MVP（✅ 已完成，2026-08-02/03）**：wrapper（PTY）+ 行时间戳 + Web 实时查看（间隔可视化）+ Ctrl-C 取消 + Agent 侧查询（FR-1c）+ 进度 API（FR-10 提前）+ **Web 端左右分栏工作台与极简风格重构（2026-08-03 验收，见 04-web-design.md）** + **本地服务安全加固（P0：REST/WS Host+Origin 校验、web 角色只读、文件权限 0600/0700、server 版本握手自动替换旧进程，2026-08-03，见 03-design.md §6/§12）**；Windows 实测通过。
 - **v0.2**：Linux/macOS 实测（forkpty 分支）；Agent 输出净化（FR-9）；**skill 指引文件（FR-1d）**；**交互输入实测（O2）**；静默告警（FR-6）。
 - **v0.3**：自动化测试；输出体积控制；历史回放动画；通知（FR-13）。
 - **v1.0**：发布打包（npm publish + web dist 构建验证）；部署文档（跨机 + TLS）。
@@ -169,6 +169,6 @@ AI Agent 经常需要执行耗时极长的任务（大文件下载、编译、�
 2. ✅ 决策：放弃 hook 强制层，改 skill 指引（2026-08-03）。
 3. 制作 skill 文件（FR-1d：指引 Agent 在长任务/后台任务场景主动使用 tmon）。
 4. Linux 实测（forkpty 分支、`/bin/sh`、GBK 编码）。
-5. 自动化测试（vitest：协议/executor/server 核心逻辑 + e2e 脚本）。
+5. ✅ 自动化测试：单元测试（tests/unit/）+ 安全测试（tests/security/，2026-08-03 落地）就绪；e2e 脚本（tests/e2e-linux.sh）持续维护。
 6. Agent 侧输出净化（FR-9）与静默告警（FR-6）。
 7. 发布打包（npm publish、Node 版本策略、web dist 构建验证）。

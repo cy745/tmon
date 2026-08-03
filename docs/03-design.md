@@ -1,6 +1,6 @@
 # tmon 详细设计 v0.2（草案）
 
-> 日期：2026-08-02（v0.2：2026-08-03 同步「放弃 hook 强制层，改 skill 指引」决策，见 §10）
+> 日期：2026-08-02（v0.2：2026-08-03 同步「放弃 hook 强制层，改 skill 指引」决策，见 §10；2026-08-03 落地本地服务安全加固（P0）与 server 版本握手，见 §3/§6/§12）
 > 上游文档：`01-requirements.md`（需求）、`02-research-report.md`（调研）
 
 ---
@@ -51,8 +51,9 @@ tmon serve                          # 手动前台启动 server（默认由 CLI 
 │   └── 7f2a9c3e/
 │       ├── meta.json      # 命令、cwd、pid、状态、退出码、起止时间、模式(pty/pipe)
 │       └── stream.jsonl   # 逐 chunk 事件（与 WS 事件同构）
-├── tmon.sock / tmon.port  # server 发现文件（进程间定位）
-└── token                  # 每次 server 启动生成，CLI/Web 鉴权用
+├── port                   # server 发现文件（当前端口，进程间定位）
+├── server.pid             # server 进程 pid（升级时 CLI 据此 kill 旧 server，见 §6）
+└── token                  # 每次 server 启动生成，CLI/WS 鉴权用（0600）
 ```
 
 ## 4. 事件协议（WebSocket，JSON 文本帧）
@@ -87,6 +88,7 @@ tmon serve                          # 手动前台启动 server（默认由 CLI 
 
 - **单进程模型（D1 已定）**：tmon 不提供后台模式——前台执行即「透明代理」的全部含义，后台化完全交由 Agent 侧（bash `&` 或工具自带 run_in_background）。
 - **自动拉起**：任何 `tmon` 子命令先探测 server（发现文件 + 端口心跳）→ 不存在则 `spawn( detached:true )` 拉起独立进程，写入发现文件。对 Agent 完全透明，无需手动 `tmon serve`。
+- **版本握手与自动替换**（2026-08-03 落地）：server 启动时写 `server.pid`（进程 pid，0600），`/api/health` 返回版本号（统一读 package.json）。CLI 探测到 server 版本与自身不一致（升级后残留的旧进程，可能缺少安全修复）时：kill 旧 server → 清理发现文件 → 拉起新 server，同一命令内完成替换；JSONL 落盘数据由新 server 恢复，任务不丢失。历史版本（无 pid 文件）无法自动 kill，新 server 另寻端口，旧进程需手动清理。
 - **执行路径**：CLI 进程内直接创建 PTY 子进程 → 输出三路：① 原样写 stdout（Agent 侧）② 净化版写 stdout（见 §8，与 ① 合并为一个通道决策）③ 逐 chunk 上报 server。CLI 阻塞至子进程退出，转发退出码。**CLI 退出即任务结束**。
 - **后台化后的生命周期**：Agent 将 tmon 进程后台化（`&` / run_in_background）时，tmon 进程脱离交互终端继续运行，server 上报与落盘不受影响，任务与 Agent 会话解耦——等效于后台执行，无需独立 -b 模式。
 - **单例 server**：同一数据目录下仅一个 server 实例（发现文件 + 端口独占）；Agent 与用户共用同一 server 和 Web。
@@ -135,9 +137,14 @@ skill 文件交付位置：仓库 `skills/tmon/SKILL.md`（可发布到 skill �
 
 ## 12. 安全
 
-- server 仅监听 `127.0.0.1`；WS/REST 均要求 `Authorization: Bearer <token>`（token 存 `~/.tmon/token`，CLI/前端自动携带）
-- 进度 IPC 端点同样需 token（防本机其他进程伪造进度）
-- 跨机部署（Agent 在服务器、用户在浏览器）→ v1.0：TLS + 用户认证（超出本版范围）
+> 2026-08-03 P0 加固落地（tests/security/ 覆盖验证），本节为实际实现，与早期"WS/REST 均要求 Bearer token"的草案描述已不一致。
+
+- server 仅监听 `127.0.0.1`
+- **REST 鉴权**：全端点 Host 白名单（`127.0.0.1`/`localhost`/`::1`）+ Origin 校验（无 Origin 的 CLI/本机进程放行，浏览器请求必须来自本机页面）——防 DNS rebinding 与 CSRF；状态变更端点（`kill`/`input`/`resize`/`progress`）强制 `application/json` content-type（挡 form POST 与 text/plain 伪 JSON 这类无 CORS 预检的注入通道）
+- **WebSocket 鉴权**：校验在 upgrade 阶段完成（`noServer` + `handleUpgrade`，连接建立前拒绝）——非本机 Host 必须 `Authorization: Bearer <token>`（agent/progress 角色），非本机 Origin 一律拒绝（CSWSH，RFC 6455 §10.2）；`web` 角色只读，禁止生产事件（防伪造事件污染 JSONL 与误导 Agent 的 `wait`/`status` 流程判定）
+- **文件权限**：`token`/`port`/`server.pid`/`meta.json`/`stream.jsonl` 均为 0600，`~/.tmon` 与任务目录 0700（防同机其他用户读取任务输出；历史版本创建的过宽权限目录/文件在启动时兜底收紧）
+- token 存 `~/.tmon/token`（0600），CLI/executor 自动携带；进度 IPC 经 REST（同上鉴权约束）
+- **本机浏览器免认证**（设计取舍）：`127.0.0.1` + Host/Origin 校验兜底；共享机器上任何能打开该浏览器的人可见任务输出——跨机部署（TLS + 用户认证）→ v1.0
 - **权限边界**：tmon 是包装器，权限 = 启动它的 Agent 的权限，不额外提权
 
 ## 13. 里程碑映射（与 01 路线图对齐）
