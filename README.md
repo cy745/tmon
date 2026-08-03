@@ -68,6 +68,7 @@ tmon wait <id> [--timeout=N]         block until done, propagate exit code
 tmon kill <id> [--signal=SIGINT|SIGTERM|SIGKILL]
 tmon progress <pct> <msg>            report progress from inside a script
 tmon stage <name>                    report stage from inside a script
+tmon skill                           print the Agent skill (SKILL.md) for self-installation
 tmon serve                           start server in foreground (normally auto-started)
 ```
 
@@ -117,6 +118,12 @@ Install the skill so agents automatically reach for tmon on long tasks:
 
 ```bash
 cp -r skills/tmon ~/.claude/skills/
+```
+
+An agent can also install it by itself — print the skill content and write it to the skills directory:
+
+```bash
+tmon skill > ~/.claude/skills/tmon/SKILL.md   # (mkdir -p ~/.claude/skills/tmon first)
 ```
 
 ## Development

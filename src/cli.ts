@@ -1,5 +1,8 @@
 // tmon CLI 命令面（docs/03-design.md §2）
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ensureServer } from './discover.ts';
 import { reportProgress } from './progress.ts';
 import { serve as startServer } from './server.ts';
@@ -22,6 +25,7 @@ export async function main(argv: string[]): Promise<number> {
   if (cmd === 'kill') return kill(rest);
   if (cmd === 'progress') return progress(rest);
   if (cmd === 'stage') return stage(rest);
+  if (cmd === 'skill') return skill();
   // 兜底：`tmon "cmd string"` 与 `tmon cmd args...` 透传形式
   return run(argv);
 }
@@ -210,6 +214,22 @@ async function stage(argv: string[]): Promise<number> {
   }
 }
 
+/** 输出 tmon skill（SKILL.md）全文：Agent 读取后自行落盘安装（~/.claude/skills/tmon/SKILL.md）
+ *  文件随包分发（files 含 skills/），src 与 dist 模式均从包根定位 */
+async function skill(): Promise<number> {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const file = path.join(here, '..', 'skills', 'tmon', 'SKILL.md');
+  try {
+    const content = fs.readFileSync(file, 'utf8');
+    process.stdout.write(content);
+    console.error('tmon: 以上为 tmon skill 内容。安装：mkdir -p ~/.claude/skills/tmon && tmon skill > ~/.claude/skills/tmon/SKILL.md');
+    return 0;
+  } catch (err) {
+    console.error(`tmon: 找不到 skill 文件: ${file}（${(err as Error).message}）`);
+    return 1;
+  }
+}
+
 function parseTail(argv: string[]): number {
   const i = argv.indexOf('--tail');
   if (i >= 0) {
@@ -247,6 +267,7 @@ function help(): number {
   tmon kill <id> [--signal=SIGINT|SIGTERM|SIGKILL]   取消任务
   tmon progress <pct> <msg>         脚本内进度上报
   tmon stage <name>                 脚本内阶段上报
+  tmon skill                        输出 Agent skill 内容（供 Agent 自行安装）
   tmon serve                        前台启动 server（默认自动拉起）`);
   return 0;
 }

@@ -67,6 +67,7 @@ tmon wait <id> [--timeout=N]         阻塞等待完成，透传退出码
 tmon kill <id> [--signal=SIGINT|SIGTERM|SIGKILL]
 tmon progress <pct> <msg>            脚本内进度上报
 tmon stage <name>                    脚本内阶段上报
+tmon skill                           输出 Agent skill 内容（供 Agent 自行安装）
 tmon serve                           前台启动 server（默认自动拉起）
 ```
 
@@ -116,6 +117,12 @@ Agent Bash 工具  →  tmon CLI（PTY 代理）  →  tmon server（事件 + JS
 
 ```bash
 cp -r skills/tmon ~/.claude/skills/
+```
+
+Agent 也可以自行安装——输出 skill 内容并写入 skills 目录：
+
+```bash
+tmon skill > ~/.claude/skills/tmon/SKILL.md   # （先 mkdir -p ~/.claude/skills/tmon）
 ```
 
 ## 开发
