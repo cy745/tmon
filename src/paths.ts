@@ -35,7 +35,13 @@ export function tokenFile(): string {
 }
 
 export function ensureDirs(): void {
-  fs.mkdirSync(tasksDir(), { recursive: true });
+  // 数据目录权限收紧（安全审计 R5）：任务输出可能含敏感信息，仅当前用户可读写
+  fs.mkdirSync(dataDir(), { recursive: true, mode: 0o700 });
+  fs.mkdirSync(tasksDir(), { recursive: true, mode: 0o700 });
+  // 已存在目录（历史版本创建的 755）兜底收紧
+  for (const dir of [dataDir(), tasksDir()]) {
+    try { fs.chmodSync(dir, 0o700); } catch { /* ignore */ }
+  }
 }
 
 export async function readPort(): Promise<number | null> {

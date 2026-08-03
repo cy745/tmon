@@ -3,6 +3,9 @@
 //       → 接收 server 转发的控制指令（kill/input/resize）→ 退出码透传
 import { spawn, type IPty } from 'node-pty';
 import { exec } from 'node:child_process';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import WebSocket from 'ws';
 import type { TaskMeta, TaskStatus, WsServerMsg } from './protocol.ts';
 import { cleanChunk } from './encoding.ts';
@@ -34,8 +37,34 @@ export interface ExecutorResult {
 
 const WIN = process.platform === 'win32';
 
+/** node-pty 1.1.0 的 prebuild 产物发布时丢失了执行位（macOS/Linux 的 spawn-helper 为 644），
+ *  直接 spawn 会 posix_spawnp EACCES。npm 解包不会恢复该位，这里运行时兜底 chmod +x。
+ *  （node-pty prebuilds 只在 prebuild 下载路径生效；node-gyp 本地编译产物不受影响） */
+function ensureSpawnHelper(): void {
+  if (WIN) return;
+  const require = createRequire(import.meta.url);
+  let ptyRoot: string;
+  try {
+    ptyRoot = path.dirname(require.resolve('node-pty/package.json'));
+  } catch {
+    return; // node-pty 未安装（理论上不会发生，run 命令必装）
+  }
+  const candidates = [
+    path.join(ptyRoot, 'build', 'Release', 'spawn-helper'),
+    path.join(ptyRoot, 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper'),
+  ];
+  for (const p of candidates) {
+    try {
+      fs.chmodSync(p, 0o755);
+    } catch {
+      // 不存在或已可执行，忽略
+    }
+  }
+}
+
 export function runTask(opts: ExecutorOptions): Promise<ExecutorResult> {
   return new Promise((resolve) => {
+    ensureSpawnHelper();
     const { taskId, token, port, cmd } = opts;
     const shell = WIN ? (process.env.ComSpec ?? 'cmd.exe') : '/bin/sh';
     const shellArgs = WIN ? ['/c', cmd] : ['-c', cmd];

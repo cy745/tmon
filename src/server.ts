@@ -21,11 +21,11 @@ interface ClientConn {
   taskId: string;
 }
 
-export async function serve(): Promise<void> {
+export async function serve(): Promise<http.Server> {
   ensureDirs();
   const token = await ensureToken();
   const port = await findFreePort();
-  fs.writeFileSync(portFile(), String(port));
+  fs.writeFileSync(portFile(), String(port), { mode: 0o600 });
   console.error(`tmon server: http://127.0.0.1:${port} (token 模式)`);
 
   const store = new Store();
@@ -80,6 +80,15 @@ export async function serve(): Promise<void> {
     const method = req.method ?? 'GET';
     const p = url.pathname;
     try {
+      // 安全校验（P0，防 DNS rebinding / CSRF）：
+      //  - Host 白名单：仅放行本机环回主机名（挡 rebinding 后的 evil.com Host）
+      //  - Origin 校验：无 Origin（CLI/本机进程）放行；浏览器请求必须来自本机页面
+      if (!isLocalHost(req.headers.host)) {
+        return json(res, 403, { error: 'forbidden' });
+      }
+      if (!isLocalOrigin(req.headers.origin)) {
+        return json(res, 403, { error: 'forbidden' });
+      }
       // 静态资源（web/dist）
       if (method === 'GET' && (p === '/' || p.startsWith('/assets/') || p === '/favicon.svg')) {
         if (serveStatic(p, res)) return;
@@ -103,6 +112,12 @@ export async function serve(): Promise<void> {
       m = p.match(/^\/api\/tasks\/([0-9a-f]{8})\/(kill|input|resize|progress)$/);
       if (m && method === 'POST') {
         const [, id, action] = m;
+        // 状态变更端点强制 JSON content-type：挡 form POST（urlencoded 无 preflight）与
+        // text/plain 伪 JSON（简单请求绕过 CORS 预检的 CSRF 注入路径，见安全审计 R3）
+        const ct = String(req.headers['content-type'] ?? '').toLowerCase();
+        if (!ct.startsWith('application/json')) {
+          return json(res, 415, { error: 'content-type must be application/json' });
+        }
         const body = (await readBody(req)) as Record<string, unknown>;
         if (action === 'kill') {
           const agent = agentOf(id);
@@ -150,16 +165,32 @@ export async function serve(): Promise<void> {
     }
   });
 
-  const wss = new WebSocketServer({ server });
+  // CSWSH 防护（P0）：浏览器 WS 握手不受同源策略保护（RFC 6455 §10.2），恶意网页可跨域直连。
+  // 校验必须发生在 upgrade 阶段（connection 回调触发时握手已完成、客户端已收到 101），
+  // 因此用 noServer 模式 + 手动 handleUpgrade，拒绝时直接回 401/403 并销毁 socket。
+  const wss = new WebSocketServer({ noServer: true });
 
-  wss.on('connection', (ws, req) => {
+  server.on('upgrade', (req, socket, head) => {
     const host = (req.headers.host ?? '').split(':')[0];
     const isLocal = host === '127.0.0.1' || host === 'localhost' || host === '::1';
     const auth = req.headers.authorization ?? '';
     if (!isLocal && auth !== `Bearer ${token}`) {
-      ws.close(4401, 'unauthorized');
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
       return;
     }
+    // 非本机页面 Origin 一律拒绝；无 Origin 的客户端（executor/CLI 等本机进程）放行，由 token 兜底
+    if (req.headers.origin && !isLocalOrigin(req.headers.origin)) {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
+  });
+
+  wss.on('connection', (ws, req) => {
     let conn: ClientConn | null = null;
     ws.on('message', (raw) => {
       let msg: WsClientMsg;
@@ -171,6 +202,11 @@ export async function serve(): Promise<void> {
       if (!('hello' in msg)) {
         // 非 hello 消息：事件（agent/progress 生产）或未注册即发消息
         if (conn && 'event' in msg) {
+          // 只读角色禁止生产事件（P0）：web 角色只能消费，伪造事件会污染 JSONL 并误导 Agent 流程判定
+          if (conn.role === 'web') {
+            ws.close(4400, 'read-only role');
+            return;
+          }
           onClientEvent(conn, msg.event);
         } else {
           ws.close(4400, 'bad message');
@@ -258,6 +294,24 @@ export async function serve(): Promise<void> {
   });
 
   await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return server; // 供测试关闭句柄
+}
+
+/** Host 白名单：仅放行本机环回主机名（IPv6 带端口时形如 [::1]:8456，需去括号再拆） */
+function isLocalHost(host: string | undefined): boolean {
+  const h = (host ?? '').replace(/^\[|\]$/g, '').split(':')[0].toLowerCase();
+  return h === '127.0.0.1' || h === 'localhost' || h === '::1';
+}
+
+/** Origin 校验：无 Origin（CLI/executor 等非浏览器客户端）放行；浏览器请求必须来自本机页面。
+ *  非法 Origin（含 file:// 与 sandbox iframe 的 'null'）一律拒绝。 */
+function isLocalOrigin(origin: string | undefined): boolean {
+  if (!origin) return true;
+  try {
+    return isLocalHost(new URL(origin).hostname);
+  } catch {
+    return false;
+  }
 }
 
 function send(ws: WebSocket, msg: WsServerMsg): void {
@@ -284,12 +338,16 @@ async function readBody(req: http.IncomingMessage): Promise<unknown> {
 async function ensureToken(): Promise<string> {
   try {
     const existing = fs.readFileSync(tokenFile(), 'utf8').trim();
-    if (existing) return existing;
+    if (existing) {
+      // 收紧既有 token 文件权限（防同机其他用户读取，安全审计 R5）
+      try { fs.chmodSync(tokenFile(), 0o600); } catch { /* ignore */ }
+      return existing;
+    }
   } catch {
     // 首次启动，无 token 文件
   }
   const token = crypto.randomBytes(24).toString('base64url');
-  fs.writeFileSync(tokenFile(), token);
+  fs.writeFileSync(tokenFile(), token, { mode: 0o600 });
   return token;
 }
 

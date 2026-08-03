@@ -47,7 +47,7 @@ export class Store {
   }
 
   create(meta: TaskMeta): void {
-    fs.mkdirSync(taskDir(meta.id), { recursive: true });
+    fs.mkdirSync(taskDir(meta.id), { recursive: true, mode: 0o700 });
     this.metas.set(meta.id, meta);
     this.writeMeta(meta);
   }
@@ -55,7 +55,10 @@ export class Store {
   appendEvent(id: string, ev: TaskEvent): void {
     const meta = this.metas.get(id);
     if (meta) meta.seq = ev.seq;
-    fs.appendFileSync(streamFile(id), JSON.stringify(ev) + '\n');
+    const file = streamFile(id);
+    // 任务输出可能含敏感信息（密码交互、密钥等），收紧文件权限（安全审计 R5）
+    try { fs.chmodSync(file, 0o600); } catch { /* 首次创建 */ }
+    fs.appendFileSync(file, JSON.stringify(ev) + '\n', { mode: 0o600 });
   }
 
   updateStatus(id: string, status: TaskStatus, exitCode: number | null, endedAt: number): void {
@@ -93,7 +96,7 @@ export class Store {
 
   private writeMeta(meta: TaskMeta): void {
     const tmp = metaFile(meta.id) + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(meta, null, 2));
+    fs.writeFileSync(tmp, JSON.stringify(meta, null, 2), { mode: 0o600 });
     fs.renameSync(tmp, metaFile(meta.id));
   }
 }
