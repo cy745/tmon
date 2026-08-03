@@ -130,7 +130,7 @@ AI Agent 经常需要执行耗时极长的任务（大文件下载、编译、�
 | Q3 | `tmon "cmd" &` 后台执行时，server 如何接管控件生命周期？ | **已定**：wrapper 与 server 分离，后台任务由 server/daemon 托管并回收孤儿进程 |
 | Q4 | 输出体积控制 | 行数/字节上限、滚动窗口、日志轮转策略 |
 | Q5 | 时间戳语义 | 墙钟时间 vs 单调时钟（间隔计算用单调时钟，展示用墙钟） |
-| Q6 | 命名冲突与定名 | **[已验证]** 原构想名 tck 三大注册表全部被占用（crates.io 同领域终端任务应用硬冲突、PyPI、npm）→ 全量筛查 5 字母内候选（tock/tick/tempo/lens/radar/kron/clk/lurk/scry/telem/tide/trce/trac 均不可直接使用）→ **最终定名 `tmon`**（4 字母，terminal monitor，三注册表均可用；2026-08-02 用户确认） |
+| Q6 | 命名冲突与定名 | **[已验证]** 原构想名 tck 三大注册表全部被占用（crates.io 同领域终端任务应用硬冲突、PyPI、npm）→ 全量筛查 5 字母内候选（tock/tick/tempo/lens/radar/kron/clk/lurk/scry/telem/tide/trce/trac 均不可直接使用）→ **最终定名 `tmon`**（4 字母，terminal monitor，三注册表均可用；2026-08-02 用户确认）。**npm 发布补充（2026-08-03）**：`tmon` 被 npm 相似度保护拦截（与 `t-mon` 撞名，误伤——两者领域无关）→ 以 scoped 包 `@qiu745/tmon` 发布（bin 命令仍为 `tmon`），同时申请豁免，通过后切回。 |
 | Q7 | 与既有生态的关系：asciinema、tmux、ttyd 等是否可底层复用 | **[已验证]** 复用：asciinema 3.0 实时流 relay 模型 + 服务器端模拟器设计、asciinema-player（Apache-2.0）作 Web 视图起点、node-pty（微软维护，ConPTY/forkpty）作 PTY 层、xterm.js 作终端渲染。不复用：ttyd/gotty（通用远程终端，无任务语义）、tmuxctl（纯协议层需自配模拟器） |
 
 ## 9. 风险

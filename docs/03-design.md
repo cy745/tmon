@@ -17,7 +17,8 @@
 | `web` | 任务列表 + 终端视图 + 间隔可视化 + 控制 | 见 §11（待确认） |
 | `sdk` | `tmon progress/stage/log` 子命令（进度上报入口，任何语言脚本可直接调用） | CLI 形式，零依赖 |
 
-> 单包理由：Agent 场景要求零配置起步（`npm i -g tmon` 即用）；server 与前端静态资源内嵌发布。
+> 单包理由：Agent 场景要求零配置起步（`npm i -g @qiu745/tmon` 即用）；server 与前端静态资源内嵌发布。
+> 包名：2026-08-03 发布时被 npm 相似度保护拦截（tmon 与 t-mon 撞名）→ 以 scoped 包 `@qiu745/tmon` 发布（bin 命令仍为 `tmon`），已向 npm support 申请 `tmon` 名字豁免，通过后切回非 scoped 名。
 
 ## 2. 命令面（CLI 接口）
 

@@ -43,7 +43,7 @@ tmon "curl -o big.bin https://example.com/big.bin"
 ## 快速开始
 
 ```bash
-npm install -g tmon
+npm install -g @qiu745/tmon
 
 # 包装任意命令
 tmon "curl -o big.bin https://example.com/big.bin"

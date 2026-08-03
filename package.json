@@ -1,5 +1,5 @@
 {
-  "name": "tmon",
+  "name": "@qiu745/tmon",
   "version": "0.1.0",
   "description": "Real-time terminal monitoring & control for AI Agent long-running commands",
   "type": "module",

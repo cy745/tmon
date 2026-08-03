@@ -44,7 +44,7 @@ The command behaves **exactly the same** for the Agent (same output, same exit c
 ## Quick Start
 
 ```bash
-npm install -g tmon
+npm install -g @qiu745/tmon
 
 # wrap any command
 tmon "curl -o big.bin https://example.com/big.bin"
