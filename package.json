@@ -34,6 +34,7 @@
     "web/dist",
     "docs",
     "skills",
+    "scripts",
     "README.md",
     "README.zh-CN.md",
     "LICENSE"
@@ -45,7 +46,8 @@
     "test:security": "vitest run tests/security",
     "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.js --external:node-pty --external:ws --external:iconv-lite --log-level=warning",
     "web:dev": "cd web && npm run dev",
-    "prepack": "npm run build && cd web && npm run build"
+    "prepack": "npm run build && cd web && npm run build",
+    "preuninstall": "node scripts/kill-server.js"
   },
   "engines": {
     "node": ">=22.18"

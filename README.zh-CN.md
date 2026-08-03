@@ -138,6 +138,16 @@ cd web && npm ci && npx tsc --noEmit
 
 issue → 分支 → PR 的协作流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+## 卸载
+
+```bash
+tmon kill-server                # ① 停止 server（detached 长驻进程不会随 npm 退出）
+npm rm -g @qiu745/tmon          # ② 卸载包
+rm -rf ~/.tmon                  # ③ （可选）清除任务数据 / token
+```
+
+server 是设计上的 detached 长驻进程，**不会随 npm 卸载退出**——npm 7+ 的全局卸载不执行 `preuninstall` 脚本（[npm/cli#3042](https://github.com/npm/cli/issues/3042)）。包内仍附带 preuninstall 钩子（npm 6 / 未来 npm 修复 / 本地卸载时生效），但可靠路径是上面的 `tmon kill-server`。
+
 ## License
 
 [MIT](LICENSE) © cy745

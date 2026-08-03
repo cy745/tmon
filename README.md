@@ -139,6 +139,16 @@ cd web && npm ci && npx tsc --noEmit
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the issue → branch → PR workflow.
 
+## Uninstalling
+
+```bash
+tmon kill-server                # ① stop the server (it's a detached process and won't die with npm)
+npm rm -g @qiu745/tmon          # ② remove the package
+rm -rf ~/.tmon                  # ③ (optional) remove task data / token
+```
+
+The server is a detached long-running process by design, so it is **not** killed by npm itself — npm 7+ does not run `preuninstall` scripts on global uninstall ([npm/cli#3042](https://github.com/npm/cli/issues/3042)). A `preuninstall` hook is shipped anyway (takes effect on npm 6, future npm fixes, and local uninstalls), but the reliable path is `tmon kill-server` above.
+
 ## License
 
 [MIT](LICENSE) © cy745

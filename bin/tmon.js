@@ -14,7 +14,7 @@ const { main } = await import(entry);
 
 // 查询类命令自然退出（避免 process.exit 与 fetch/undici 清理的 libuv 断言竞态）；
 // 执行类命令（run / 透传）强制退出（Windows 下 node-pty 的 ConPTY handle 残留会 hang）
-const QUERY_CMDS = new Set(['serve', 'last', 'ls', 'status', 'show', 'wait', 'kill', 'progress', 'stage', 'skill', 'help', '--help', '-h']);
+const QUERY_CMDS = new Set(['serve', 'last', 'ls', 'status', 'show', 'wait', 'kill', 'progress', 'stage', 'skill', 'kill-server', 'help', '--help', '-h']);
 const needsForceExit = !QUERY_CMDS.has(process.argv[2]);
 
 main(process.argv.slice(2)).then(

@@ -26,6 +26,7 @@ export async function main(argv: string[]): Promise<number> {
   if (cmd === 'progress') return progress(rest);
   if (cmd === 'stage') return stage(rest);
   if (cmd === 'skill') return skill();
+  if (cmd === 'kill-server') return killServer();
   // 兜底：`tmon "cmd string"` 与 `tmon cmd args...` 透传形式
   return run(argv);
 }
@@ -214,6 +215,28 @@ async function stage(argv: string[]): Promise<number> {
   }
 }
 
+/** 停止 server 实例（卸载清理/手动管理）：读 server.pid → kill → 清发现文件。
+ *  detached server 不随 npm 卸载退出，此命令供 preuninstall 钩子与手动清理使用 */
+async function killServer(): Promise<number> {
+  const { pidFile, portFile } = await import('./paths.ts');
+  const pidRaw = await fs.promises.readFile(pidFile(), 'utf8').catch(() => '');
+  const pid = Number(pidRaw.trim());
+  if (!Number.isInteger(pid) || pid <= 0) {
+    console.error('tmon: 无运行中的 server（找不到有效的 server.pid）');
+    return 1;
+  }
+  try {
+    process.kill(pid, 'SIGKILL');
+    console.error(`tmon: 已停止 server（pid ${pid}）`);
+  } catch {
+    console.error(`tmon: server（pid ${pid}）已不在运行`);
+  }
+  for (const f of [pidFile(), portFile()]) {
+    try { await fs.promises.rm(f, { force: true }); } catch { /* ignore */ }
+  }
+  return 0;
+}
+
 /** 输出 tmon skill（SKILL.md）全文：Agent 读取后自行落盘安装（~/.claude/skills/tmon/SKILL.md）
  *  文件随包分发（files 含 skills/），src 与 dist 模式均从包根定位 */
 async function skill(): Promise<number> {
@@ -268,6 +291,7 @@ function help(): number {
   tmon progress <pct> <msg>         脚本内进度上报
   tmon stage <name>                 脚本内阶段上报
   tmon skill                        输出 Agent skill 内容（供 Agent 自行安装）
+  tmon kill-server                  停止 server 实例（卸载清理用）
   tmon serve                        前台启动 server（默认自动拉起）`);
   return 0;
 }
